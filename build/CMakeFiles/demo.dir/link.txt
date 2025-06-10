@@ -1,1 +1,0 @@
-/usr/bin/c++     CMakeFiles/demo.dir/main.cpp.o  -o demo -Wl,-rpath,/workspace/algo/demo3/build libalgo_temp.so -lpthread -lrt 

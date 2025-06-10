@@ -1,0 +1,8 @@
+*.o
+*.so
+cmake-build-debug/
+.idea
+*.bmodel
+*.Identifier
+*.jpg
+*.vscode

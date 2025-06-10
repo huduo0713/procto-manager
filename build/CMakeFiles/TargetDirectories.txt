@@ -1,4 +1,0 @@
-/workspace/algo/demo3/build/CMakeFiles/rebuild_cache.dir
-/workspace/algo/demo3/build/CMakeFiles/edit_cache.dir
-/workspace/algo/demo3/build/CMakeFiles/algo_temp.dir
-/workspace/algo/demo3/build/CMakeFiles/demo.dir
