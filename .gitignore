@@ -6,3 +6,5 @@ cmake-build-debug/
 *.Identifier
 *.jpg
 *.vscode
+build
+log

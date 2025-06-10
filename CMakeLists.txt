@@ -18,11 +18,13 @@ add_library(algo_temp SHARED impl/infer_impl.cc)
 target_link_libraries(algo_temp
     pthread
     rt             
-)
+    )
 
 
-add_executable(demo
-                    main.cpp)
+add_executable(demo 
+    main.cpp
+    )
+
 
 target_link_libraries(demo PRIVATE algo_temp)
 
