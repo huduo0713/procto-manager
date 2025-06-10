@@ -1,0 +1,400 @@
+[2025-06-06 16:52:27.682][info][29044][infer_impl.cc:139] start algo.
+[2025-06-06 16:52:27.682][error][29044][infer_impl.cc:120] preprocess error.
+[2025-06-06 16:52:27.682][info][29044][infer_impl.cc:139] start algo.
+[2025-06-06 16:52:27.682][error][29044][infer_impl.cc:120] preprocess error.
+[2025-06-06 16:52:27.682][info][29044][infer_impl.cc:139] start algo.
+[2025-06-06 16:52:27.682][error][29044][infer_impl.cc:120] preprocess error.
+[2025-06-06 16:52:27.682][info][29044][main.cpp:30] the predict out = 6.9955687e-23
+[2025-06-06 16:54:02.060][info][29129][infer_impl.cc:139] start algo.
+[2025-06-06 16:54:02.060][error][29129][infer_impl.cc:120] preprocess error.
+[2025-06-06 16:54:02.060][info][29129][infer_impl.cc:139] start algo.
+[2025-06-06 16:54:02.060][error][29129][infer_impl.cc:120] preprocess error.
+[2025-06-06 16:54:02.060][info][29129][infer_impl.cc:139] start algo.
+[2025-06-06 16:54:02.060][error][29129][infer_impl.cc:120] preprocess error.
+[2025-06-06 16:54:02.060][info][29129][main.cpp:30] the predict out = 4101485700000000
+[2025-06-06 16:54:11.653][info][29396][infer_impl.cc:139] start algo.
+[2025-06-06 16:54:11.653][error][29396][infer_impl.cc:36] shm_open failed
+[2025-06-06 16:54:11.653][error][29396][infer_impl.cc:120] preprocess error.
+[2025-06-06 16:54:11.653][info][29396][infer_impl.cc:139] start algo.
+[2025-06-06 16:54:11.653][error][29396][infer_impl.cc:36] shm_open failed
+[2025-06-06 16:54:11.653][error][29396][infer_impl.cc:120] preprocess error.
+[2025-06-06 16:54:11.653][info][29396][infer_impl.cc:139] start algo.
+[2025-06-06 16:54:11.653][error][29396][infer_impl.cc:36] shm_open failed
+[2025-06-06 16:54:11.653][error][29396][infer_impl.cc:120] preprocess error.
+[2025-06-06 16:54:11.653][info][29396][main.cpp:30] the predict out = 5.9476066e-17
+[2025-06-06 16:57:25.483][info][30305][infer_impl.cc:139] start algo.
+[2025-06-06 16:57:25.483][error][30305][infer_impl.cc:36] shm_open failed
+[2025-06-06 16:57:25.483][error][30305][infer_impl.cc:63] Input data length does not match expected frame size
+[2025-06-06 16:57:25.483][error][30305][infer_impl.cc:120] preprocess error.
+[2025-06-06 16:57:25.483][info][30305][infer_impl.cc:139] start algo.
+[2025-06-06 16:57:25.483][error][30305][infer_impl.cc:36] shm_open failed
+[2025-06-06 16:57:25.483][error][30305][infer_impl.cc:63] Input data length does not match expected frame size
+[2025-06-06 16:57:25.483][error][30305][infer_impl.cc:120] preprocess error.
+[2025-06-06 16:57:25.483][info][30305][infer_impl.cc:139] start algo.
+[2025-06-06 16:57:25.483][error][30305][infer_impl.cc:36] shm_open failed
+[2025-06-06 16:57:25.483][error][30305][infer_impl.cc:63] Input data length does not match expected frame size
+[2025-06-06 16:57:25.483][error][30305][infer_impl.cc:120] preprocess error.
+[2025-06-06 16:57:25.483][info][30305][main.cpp:30] the predict out = -4.2697563e-27
+[2025-06-06 16:59:04.603][info][30719][infer_impl.cc:139] start algo.
+[2025-06-06 16:59:04.603][error][30719][infer_impl.cc:63] Input data length does not match expected frame size
+[2025-06-06 16:59:04.603][error][30719][infer_impl.cc:120] preprocess error.
+[2025-06-06 16:59:04.603][info][30719][infer_impl.cc:139] start algo.
+[2025-06-06 16:59:04.603][error][30719][infer_impl.cc:63] Input data length does not match expected frame size
+[2025-06-06 16:59:04.603][error][30719][infer_impl.cc:120] preprocess error.
+[2025-06-06 16:59:04.603][info][30719][infer_impl.cc:139] start algo.
+[2025-06-06 16:59:04.603][error][30719][infer_impl.cc:63] Input data length does not match expected frame size
+[2025-06-06 16:59:04.603][error][30719][infer_impl.cc:120] preprocess error.
+[2025-06-06 16:59:04.603][info][30719][main.cpp:30] the predict out = -1.1241445e+38
+[2025-06-06 17:11:37.480][info][32903][infer_impl.cc:139] start algo.
+[2025-06-06 17:11:37.480][info][32903][infer_impl.cc:68] write_index_ = 0
+[2025-06-06 17:11:37.480][error][32903][infer_impl.cc:143] err code = 0
+[2025-06-06 17:11:37.480][info][32903][infer_impl.cc:139] start algo.
+[2025-06-06 17:11:37.480][info][32903][infer_impl.cc:68] write_index_ = 0
+[2025-06-06 17:11:37.481][error][32903][infer_impl.cc:143] err code = 0
+[2025-06-06 17:11:37.481][info][32903][infer_impl.cc:139] start algo.
+[2025-06-06 17:11:37.481][info][32903][infer_impl.cc:68] write_index_ = 0
+[2025-06-06 17:11:37.481][error][32903][infer_impl.cc:143] err code = 0
+[2025-06-06 17:11:37.481][info][32903][infer_impl.cc:139] start algo.
+[2025-06-06 17:11:37.481][info][32903][infer_impl.cc:68] write_index_ = 0
+[2025-06-06 17:11:37.481][error][32903][infer_impl.cc:143] err code = 0
+[2025-06-06 17:11:37.481][info][32903][infer_impl.cc:139] start algo.
+[2025-06-06 17:11:37.481][info][32903][infer_impl.cc:68] write_index_ = 0
+[2025-06-06 17:11:37.481][error][32903][infer_impl.cc:143] err code = 0
+[2025-06-06 17:11:37.481][info][32903][infer_impl.cc:139] start algo.
+[2025-06-06 17:11:37.481][info][32903][infer_impl.cc:68] write_index_ = 0
+[2025-06-06 17:11:37.481][error][32903][infer_impl.cc:143] err code = 0
+[2025-06-06 17:11:37.481][info][32903][main.cpp:30] the predict out = 4.1989e-41
+[2025-06-06 17:18:05.987][info][33396][infer_impl.cc:156] start algo.
+[2025-06-06 17:18:05.987][info][33396][infer_impl.cc:85] write_index_ = 0
+[2025-06-06 17:18:05.987][info][33396][infer_impl.cc:156] start algo.
+[2025-06-06 17:18:05.987][info][33396][infer_impl.cc:85] write_index_ = 0
+[2025-06-06 17:18:05.987][info][33396][infer_impl.cc:156] start algo.
+[2025-06-06 17:18:05.987][info][33396][infer_impl.cc:85] write_index_ = 0
+[2025-06-06 17:18:05.987][info][33396][infer_impl.cc:156] start algo.
+[2025-06-06 17:18:05.987][info][33396][infer_impl.cc:85] write_index_ = 0
+[2025-06-06 17:18:05.987][info][33396][infer_impl.cc:156] start algo.
+[2025-06-06 17:18:05.987][info][33396][infer_impl.cc:85] write_index_ = 0
+[2025-06-06 17:18:05.987][info][33396][infer_impl.cc:156] start algo.
+[2025-06-06 17:18:05.987][info][33396][infer_impl.cc:85] write_index_ = 0
+[2025-06-06 17:18:05.987][info][33396][main.cpp:30] the predict out = 4.2842e-41
+[2025-06-06 17:19:01.088][info][33726][infer_impl.cc:157] start algo.
+[2025-06-06 17:19:01.088][info][33726][infer_impl.cc:85] write_index_ = 0
+[2025-06-06 17:19:01.088][info][33726][infer_impl.cc:157] start algo.
+[2025-06-06 17:19:01.088][info][33726][infer_impl.cc:85] write_index_ = 0
+[2025-06-06 17:19:01.088][info][33726][infer_impl.cc:157] start algo.
+[2025-06-06 17:19:01.088][info][33726][infer_impl.cc:85] write_index_ = 0
+[2025-06-06 17:19:01.088][info][33726][infer_impl.cc:157] start algo.
+[2025-06-06 17:19:01.088][info][33726][infer_impl.cc:85] write_index_ = 0
+[2025-06-06 17:19:01.088][info][33726][infer_impl.cc:157] start algo.
+[2025-06-06 17:19:01.089][info][33726][infer_impl.cc:85] write_index_ = 0
+[2025-06-06 17:19:01.089][info][33726][infer_impl.cc:157] start algo.
+[2025-06-06 17:19:01.089][info][33726][infer_impl.cc:85] write_index_ = 0
+[2025-06-06 17:19:01.089][info][33726][main.cpp:30] the predict out = 4.1707e-41
+[2025-06-06 17:19:51.404][info][33761][infer_impl.cc:157] start algo.
+[2025-06-06 17:19:51.404][info][33761][infer_impl.cc:85] write_index_ = 0
+[2025-06-06 17:19:51.404][info][33761][infer_impl.cc:157] start algo.
+[2025-06-06 17:19:51.404][info][33761][infer_impl.cc:85] write_index_ = 0
+[2025-06-06 17:19:51.404][info][33761][infer_impl.cc:157] start algo.
+[2025-06-06 17:19:51.404][info][33761][infer_impl.cc:85] write_index_ = 0
+[2025-06-06 17:19:51.404][info][33761][infer_impl.cc:157] start algo.
+[2025-06-06 17:19:51.404][info][33761][infer_impl.cc:85] write_index_ = 0
+[2025-06-06 17:19:51.404][info][33761][infer_impl.cc:157] start algo.
+[2025-06-06 17:19:51.404][info][33761][infer_impl.cc:85] write_index_ = 0
+[2025-06-06 17:19:51.404][info][33761][infer_impl.cc:157] start algo.
+[2025-06-06 17:19:51.404][info][33761][infer_impl.cc:85] write_index_ = 0
+[2025-06-06 17:19:51.404][info][33761][main.cpp:30] the predict out = 4.1547e-41
+[2025-06-06 17:21:11.951][info][34317][infer_impl.cc:156] start algo.
+[2025-06-06 17:21:11.951][info][34317][infer_impl.cc:85] write_index_ = 0
+[2025-06-06 17:21:11.951][info][34317][infer_impl.cc:156] start algo.
+[2025-06-06 17:21:11.951][info][34317][infer_impl.cc:85] write_index_ = 0
+[2025-06-06 17:21:11.951][info][34317][infer_impl.cc:156] start algo.
+[2025-06-06 17:21:11.951][info][34317][infer_impl.cc:85] write_index_ = 0
+[2025-06-06 17:21:11.951][info][34317][infer_impl.cc:156] start algo.
+[2025-06-06 17:21:11.951][info][34317][infer_impl.cc:85] write_index_ = 0
+[2025-06-06 17:21:11.952][info][34317][infer_impl.cc:156] start algo.
+[2025-06-06 17:21:11.952][info][34317][infer_impl.cc:85] write_index_ = 0
+[2025-06-06 17:21:11.952][info][34317][infer_impl.cc:156] start algo.
+[2025-06-06 17:21:11.952][info][34317][infer_impl.cc:85] write_index_ = 0
+[2025-06-06 17:21:11.952][info][34317][main.cpp:30] the predict out = 4.5268e-41
+[2025-06-06 22:25:18.138][info][34598][infer_impl.cc:156] start algo.
+[2025-06-06 22:25:18.138][info][34598][infer_impl.cc:85] write_index_ = 0
+[2025-06-06 22:25:18.138][info][34598][infer_impl.cc:156] start algo.
+[2025-06-06 22:25:18.138][info][34598][infer_impl.cc:85] write_index_ = 0
+[2025-06-06 22:25:18.138][info][34598][infer_impl.cc:156] start algo.
+[2025-06-06 22:25:18.138][info][34598][infer_impl.cc:85] write_index_ = 0
+[2025-06-06 22:25:18.138][info][34598][infer_impl.cc:156] start algo.
+[2025-06-06 22:25:18.138][info][34598][infer_impl.cc:85] write_index_ = 0
+[2025-06-06 22:25:18.138][info][34598][infer_impl.cc:156] start algo.
+[2025-06-06 22:25:18.138][info][34598][infer_impl.cc:85] write_index_ = 0
+[2025-06-06 22:25:18.138][info][34598][infer_impl.cc:156] start algo.
+[2025-06-06 22:25:18.138][info][34598][infer_impl.cc:85] write_index_ = 0
+[2025-06-06 22:25:18.138][info][34598][main.cpp:30] the predict out = 4.4863e-41
+[2025-06-06 23:14:34.015][info][35710][infer_impl.cc:156] start algo.
+[2025-06-06 23:14:34.015][info][35710][infer_impl.cc:94] write_index_ = 1
+[2025-06-06 23:14:34.016][info][35710][infer_impl.cc:156] start algo.
+[2025-06-06 23:14:34.016][info][35710][infer_impl.cc:94] write_index_ = 0
+[2025-06-06 23:14:34.016][info][35710][infer_impl.cc:156] start algo.
+[2025-06-06 23:14:34.016][info][35710][infer_impl.cc:94] write_index_ = 0
+[2025-06-06 23:14:34.016][info][35710][infer_impl.cc:156] start algo.
+[2025-06-06 23:14:34.016][info][35710][infer_impl.cc:94] write_index_ = 0
+[2025-06-06 23:14:34.016][info][35710][infer_impl.cc:156] start algo.
+[2025-06-06 23:14:34.016][info][35710][infer_impl.cc:94] write_index_ = 0
+[2025-06-06 23:14:34.016][info][35710][infer_impl.cc:156] start algo.
+[2025-06-06 23:14:34.016][info][35710][infer_impl.cc:94] write_index_ = 0
+[2025-06-06 23:14:34.016][info][35710][main.cpp:30] the predict out = 4.2046e-41
+[2025-06-06 23:16:38.807][info][36007][infer_impl.cc:157] start algo.
+[2025-06-06 23:16:38.807][info][36007][infer_impl.cc:71] cleaning the shm_ptr at the first time.
+[2025-06-06 23:16:38.807][info][36007][infer_impl.cc:95] write_index_ = 1
+[2025-06-06 23:16:38.808][info][36007][infer_impl.cc:157] start algo.
+[2025-06-06 23:16:38.808][info][36007][infer_impl.cc:95] write_index_ = 0
+[2025-06-06 23:16:38.808][info][36007][infer_impl.cc:157] start algo.
+[2025-06-06 23:16:38.808][info][36007][infer_impl.cc:95] write_index_ = 0
+[2025-06-06 23:16:38.808][info][36007][infer_impl.cc:157] start algo.
+[2025-06-06 23:16:38.808][info][36007][infer_impl.cc:95] write_index_ = 0
+[2025-06-06 23:16:38.809][info][36007][infer_impl.cc:157] start algo.
+[2025-06-06 23:16:38.809][info][36007][infer_impl.cc:95] write_index_ = 0
+[2025-06-06 23:16:38.809][info][36007][infer_impl.cc:157] start algo.
+[2025-06-06 23:16:38.809][info][36007][infer_impl.cc:95] write_index_ = 0
+[2025-06-06 23:16:38.810][info][36007][main.cpp:30] the predict out = 4.3851e-41
+[2025-06-06 23:21:25.414][info][36290][infer_impl.cc:157] start algo.
+[2025-06-06 23:21:25.414][info][36290][infer_impl.cc:95] write_index_ = 1
+[2025-06-06 23:21:25.414][info][36290][infer_impl.cc:157] start algo.
+[2025-06-06 23:21:25.414][info][36290][infer_impl.cc:95] write_index_ = 0
+[2025-06-06 23:21:25.414][info][36290][infer_impl.cc:157] start algo.
+[2025-06-06 23:21:25.414][info][36290][infer_impl.cc:95] write_index_ = 0
+[2025-06-06 23:21:25.415][info][36290][infer_impl.cc:157] start algo.
+[2025-06-06 23:21:25.415][info][36290][infer_impl.cc:95] write_index_ = 0
+[2025-06-06 23:21:25.415][info][36290][infer_impl.cc:157] start algo.
+[2025-06-06 23:21:25.415][info][36290][infer_impl.cc:95] write_index_ = 0
+[2025-06-06 23:21:25.415][info][36290][infer_impl.cc:157] start algo.
+[2025-06-06 23:21:25.415][info][36290][infer_impl.cc:95] write_index_ = 0
+[2025-06-06 23:21:25.415][info][36290][main.cpp:30] the predict out = 4.1673e-41
+[2025-06-06 23:30:49.726][info][36592][infer_impl.cc:157] start algo.
+[2025-06-06 23:30:49.726][info][36592][infer_impl.cc:71] cleaning the shm_ptr at the first time.
+[2025-06-06 23:30:49.726][info][36592][infer_impl.cc:95] write_index_ = 1
+[2025-06-06 23:30:49.726][info][36592][infer_impl.cc:157] start algo.
+[2025-06-06 23:30:49.726][info][36592][infer_impl.cc:95] write_index_ = 0
+[2025-06-06 23:30:49.726][info][36592][infer_impl.cc:157] start algo.
+[2025-06-06 23:30:49.726][info][36592][infer_impl.cc:95] write_index_ = 0
+[2025-06-06 23:30:49.726][info][36592][infer_impl.cc:157] start algo.
+[2025-06-06 23:30:49.726][info][36592][infer_impl.cc:95] write_index_ = 0
+[2025-06-06 23:30:49.726][info][36592][infer_impl.cc:157] start algo.
+[2025-06-06 23:30:49.726][info][36592][infer_impl.cc:95] write_index_ = 0
+[2025-06-06 23:30:49.727][info][36592][infer_impl.cc:157] start algo.
+[2025-06-06 23:30:49.727][info][36592][infer_impl.cc:95] write_index_ = 0
+[2025-06-06 23:30:49.727][info][36592][main.cpp:30] the predict out = 4.3531e-41
+[2025-06-06 23:34:45.843][info][36883][infer_impl.cc:158] start algo.
+[2025-06-06 23:34:45.843][info][36883][infer_impl.cc:72] cleaning the shm_ptr at the first time.
+[2025-06-06 23:34:45.843][info][36883][infer_impl.cc:96] write_index_ = 1
+[2025-06-06 23:34:45.843][info][36883][infer_impl.cc:158] start algo.
+[2025-06-06 23:34:45.843][info][36883][infer_impl.cc:96] write_index_ = 1
+[2025-06-06 23:34:45.844][info][36883][infer_impl.cc:158] start algo.
+[2025-06-06 23:34:45.844][info][36883][infer_impl.cc:96] write_index_ = 1
+[2025-06-06 23:34:45.844][info][36883][infer_impl.cc:158] start algo.
+[2025-06-06 23:34:45.844][info][36883][infer_impl.cc:96] write_index_ = 1
+[2025-06-06 23:34:45.844][info][36883][infer_impl.cc:158] start algo.
+[2025-06-06 23:34:45.844][info][36883][infer_impl.cc:96] write_index_ = 1
+[2025-06-06 23:34:45.844][info][36883][infer_impl.cc:158] start algo.
+[2025-06-06 23:34:45.844][info][36883][infer_impl.cc:96] write_index_ = 1
+[2025-06-06 23:34:45.844][info][36883][main.cpp:30] the predict out = 4.5465e-41
+[2025-06-06 23:42:10.469][info][36931][infer_impl.cc:158] start algo.
+[2025-06-06 23:42:10.469][info][36931][infer_impl.cc:72] cleaning the shm_ptr at the first time.
+[2025-06-06 23:42:10.469][info][36931][infer_impl.cc:96] write_index_ = 1
+[2025-06-06 23:42:10.470][info][36931][infer_impl.cc:158] start algo.
+[2025-06-06 23:42:10.470][info][36931][infer_impl.cc:96] write_index_ = 1
+[2025-06-06 23:42:10.470][info][36931][infer_impl.cc:158] start algo.
+[2025-06-06 23:42:10.470][info][36931][infer_impl.cc:96] write_index_ = 1
+[2025-06-06 23:42:10.470][info][36931][infer_impl.cc:158] start algo.
+[2025-06-06 23:42:10.470][info][36931][infer_impl.cc:96] write_index_ = 1
+[2025-06-06 23:42:10.470][info][36931][infer_impl.cc:158] start algo.
+[2025-06-06 23:42:10.470][info][36931][infer_impl.cc:96] write_index_ = 1
+[2025-06-06 23:42:10.470][info][36931][infer_impl.cc:158] start algo.
+[2025-06-06 23:42:10.470][info][36931][infer_impl.cc:96] write_index_ = 1
+[2025-06-06 23:42:10.470][info][36931][main.cpp:30] the predict out = 4.245e-41
+[2025-06-06 23:42:19.731][info][37197][infer_impl.cc:156] start algo.
+[2025-06-06 23:42:19.731][info][37197][infer_impl.cc:72] cleaning the shm_ptr at the first time.
+[2025-06-06 23:42:19.731][info][37197][infer_impl.cc:92] write_index_ = 1
+[2025-06-06 23:42:19.731][info][37197][infer_impl.cc:156] start algo.
+[2025-06-06 23:42:19.731][info][37197][infer_impl.cc:92] write_index_ = 2
+[2025-06-06 23:42:19.731][info][37197][infer_impl.cc:156] start algo.
+[2025-06-06 23:42:19.731][info][37197][infer_impl.cc:92] write_index_ = 3
+[2025-06-06 23:42:19.731][info][37197][infer_impl.cc:156] start algo.
+[2025-06-06 23:42:19.731][info][37197][infer_impl.cc:92] write_index_ = 4
+[2025-06-06 23:42:19.732][info][37197][infer_impl.cc:156] start algo.
+[2025-06-06 23:42:19.732][info][37197][infer_impl.cc:92] write_index_ = 5
+[2025-06-06 23:42:19.732][info][37197][infer_impl.cc:156] start algo.
+[2025-06-06 23:42:19.732][info][37197][infer_impl.cc:92] write_index_ = 6
+[2025-06-06 23:42:19.732][info][37197][main.cpp:30] the predict out = 4.1675e-41
+[2025-06-06 23:47:22.639][info][37519][infer_impl.cc:155] start algo.
+[2025-06-06 23:47:22.639][info][37519][infer_impl.cc:72] cleaning the shm_ptr at the first time.
+[2025-06-06 23:47:22.639][error][37519][infer_impl.cc:86] Input data length does not match expected frame size
+[2025-06-06 23:47:22.639][error][37519][infer_impl.cc:136] preprocess error.
+[2025-06-06 23:47:22.639][error][37519][infer_impl.cc:159] err code = 1
+[2025-06-06 23:47:22.639][info][37519][infer_impl.cc:155] start algo.
+[2025-06-06 23:47:22.639][error][37519][infer_impl.cc:86] Input data length does not match expected frame size
+[2025-06-06 23:47:22.639][error][37519][infer_impl.cc:136] preprocess error.
+[2025-06-06 23:47:22.639][error][37519][infer_impl.cc:159] err code = 1
+[2025-06-06 23:47:22.639][info][37519][infer_impl.cc:155] start algo.
+[2025-06-06 23:47:22.639][error][37519][infer_impl.cc:86] Input data length does not match expected frame size
+[2025-06-06 23:47:22.639][error][37519][infer_impl.cc:136] preprocess error.
+[2025-06-06 23:47:22.639][error][37519][infer_impl.cc:159] err code = 1
+[2025-06-06 23:47:22.639][info][37519][infer_impl.cc:155] start algo.
+[2025-06-06 23:47:22.639][error][37519][infer_impl.cc:86] Input data length does not match expected frame size
+[2025-06-06 23:47:22.639][error][37519][infer_impl.cc:136] preprocess error.
+[2025-06-06 23:47:22.639][error][37519][infer_impl.cc:159] err code = 1
+[2025-06-06 23:47:22.639][info][37519][infer_impl.cc:155] start algo.
+[2025-06-06 23:47:22.639][error][37519][infer_impl.cc:86] Input data length does not match expected frame size
+[2025-06-06 23:47:22.639][error][37519][infer_impl.cc:136] preprocess error.
+[2025-06-06 23:47:22.639][error][37519][infer_impl.cc:159] err code = 1
+[2025-06-06 23:47:22.639][info][37519][infer_impl.cc:155] start algo.
+[2025-06-06 23:47:22.639][error][37519][infer_impl.cc:86] Input data length does not match expected frame size
+[2025-06-06 23:47:22.639][error][37519][infer_impl.cc:136] preprocess error.
+[2025-06-06 23:47:22.639][error][37519][infer_impl.cc:159] err code = 1
+[2025-06-06 23:47:22.639][info][37519][main.cpp:30] the predict out = 4.4652e-41
+[2025-06-06 23:48:05.536][info][37800][infer_impl.cc:155] start algo.
+[2025-06-06 23:48:05.536][info][37800][infer_impl.cc:72] cleaning the shm_ptr at the first time.
+[2025-06-06 23:48:05.536][info][37800][infer_impl.cc:155] start algo.
+[2025-06-06 23:48:05.536][info][37800][infer_impl.cc:155] start algo.
+[2025-06-06 23:48:05.536][info][37800][infer_impl.cc:155] start algo.
+[2025-06-06 23:48:05.536][info][37800][infer_impl.cc:155] start algo.
+[2025-06-06 23:48:05.537][info][37800][infer_impl.cc:155] start algo.
+[2025-06-06 23:48:05.537][info][37800][main.cpp:30] the predict out = 4.2234e-41
+[2025-06-06 23:51:55.084][info][38087][infer_impl.cc:155] start algo.
+[2025-06-06 23:51:55.084][info][38087][infer_impl.cc:72] cleaning the shm_ptr at the first time.
+[2025-06-06 23:51:55.084][info][38087][infer_impl.cc:155] start algo.
+[2025-06-06 23:51:55.085][info][38087][infer_impl.cc:155] start algo.
+[2025-06-06 23:51:55.085][info][38087][infer_impl.cc:155] start algo.
+[2025-06-06 23:51:55.085][info][38087][infer_impl.cc:155] start algo.
+[2025-06-06 23:51:55.085][info][38087][infer_impl.cc:155] start algo.
+[2025-06-06 23:51:55.085][info][38087][main.cpp:30] the predict out = 4.395e-41
+[2025-06-06 23:52:58.449][info][38373][infer_impl.cc:155] start algo.
+[2025-06-06 23:52:58.449][info][38373][infer_impl.cc:72] cleaning the shm_ptr at the first time.
+[2025-06-06 23:52:58.449][info][38373][infer_impl.cc:155] start algo.
+[2025-06-06 23:52:58.449][info][38373][infer_impl.cc:155] start algo.
+[2025-06-06 23:52:58.449][info][38373][infer_impl.cc:155] start algo.
+[2025-06-06 23:52:58.449][info][38373][infer_impl.cc:155] start algo.
+[2025-06-06 23:52:58.449][info][38373][infer_impl.cc:155] start algo.
+[2025-06-06 23:52:58.449][info][38373][main.cpp:30] the predict out = 4.1107e-41
+[2025-06-06 23:53:58.056][info][38693][infer_impl.cc:155] start algo.
+[2025-06-06 23:53:58.056][info][38693][infer_impl.cc:156] 
+
+[2025-06-06 23:53:58.056][info][38693][infer_impl.cc:72] cleaning the shm_ptr at the first time.
+[2025-06-06 23:53:58.057][info][38693][infer_impl.cc:155] start algo.
+[2025-06-06 23:53:58.057][info][38693][infer_impl.cc:156] 
+
+[2025-06-06 23:53:58.057][info][38693][infer_impl.cc:155] start algo.
+[2025-06-06 23:53:58.057][info][38693][infer_impl.cc:156] 
+
+[2025-06-06 23:53:58.057][info][38693][infer_impl.cc:155] start algo.
+[2025-06-06 23:53:58.057][info][38693][infer_impl.cc:156] 
+
+[2025-06-06 23:53:58.057][info][38693][infer_impl.cc:155] start algo.
+[2025-06-06 23:53:58.057][info][38693][infer_impl.cc:156] 
+
+[2025-06-06 23:53:58.057][info][38693][infer_impl.cc:155] start algo.
+[2025-06-06 23:53:58.057][info][38693][infer_impl.cc:156] 
+
+[2025-06-06 23:53:58.057][info][38693][main.cpp:30] the predict out = 4.4742e-41
+[2025-06-06 23:54:40.884][info][39024][infer_impl.cc:72] cleaning the shm_ptr at the first time.
+[2025-06-06 23:54:40.884][info][39024][main.cpp:30] the predict out = 4.1327e-41
+[2025-06-09 13:48:50.490][info][42344][infer_impl.cc:72] cleaning the shm_ptr at the first time.
+[2025-06-09 13:48:50.490][info][42344][main.cpp:30] the predict out = 4.1886e-41
+[2025-06-09 13:51:04.820][info][42641][infer_impl.cc:72] cleaning the shm_ptr at the first time.
+[2025-06-09 13:51:10.822][info][42641][main.cpp:32] the predict out = 4.3821e-41
+[2025-06-09 14:37:12.880][info][43109][infer_impl.cc:73] cleaning the shm_ptr at the first time.
+[2025-06-09 14:37:12.880][error][43109][infer_impl.cc:96] Input data length does not match expected frame size
+[2025-06-09 14:37:12.880][error][43109][infer_impl.cc:148] preprocess error.
+[2025-06-09 14:37:12.880][error][43109][infer_impl.cc:170] err code = 1
+[2025-06-09 14:37:13.881][error][43109][infer_impl.cc:96] Input data length does not match expected frame size
+[2025-06-09 14:37:13.881][error][43109][infer_impl.cc:148] preprocess error.
+[2025-06-09 14:37:13.881][error][43109][infer_impl.cc:170] err code = 1
+[2025-06-09 14:37:14.881][error][43109][infer_impl.cc:96] Input data length does not match expected frame size
+[2025-06-09 14:37:14.881][error][43109][infer_impl.cc:148] preprocess error.
+[2025-06-09 14:37:14.881][error][43109][infer_impl.cc:170] err code = 1
+[2025-06-09 14:37:15.881][info][43109][main.cpp:32] the predict out = 4.3052e-41
+[2025-06-09 14:45:41.551][info][43780][infer_impl.cc:73] cleaning the shm_ptr at the first time.
+[2025-06-09 14:45:42.551][info][43780][infer_impl.cc:73] cleaning the shm_ptr at the first time.
+[2025-06-09 14:45:43.552][info][43780][infer_impl.cc:73] cleaning the shm_ptr at the first time.
+[2025-06-09 14:45:44.552][info][43780][main.cpp:32] the predict out = 4.0821e-41
+[2025-06-09 14:48:11.869][info][44142][infer_impl.cc:73] cleaning the shm_ptr at the first time.
+[2025-06-09 14:48:14.870][info][44142][main.cpp:32] the predict out = 4.2695e-41
+[2025-06-09 15:10:55.917][info][44759][infer_impl.cc:73] cleaning the shm_ptr at the first time.
+[2025-06-09 15:11:02.921][info][44759][main.cpp:38] the predict out = 1.9285093e-22
+[2025-06-09 15:11:31.062][info][45071][infer_impl.cc:73] cleaning the shm_ptr at the first time.
+[2025-06-09 15:11:37.064][info][45071][main.cpp:38] the predict out = 0.04910705
+[2025-06-09 15:12:13.019][info][45128][infer_impl.cc:73] cleaning the shm_ptr at the first time.
+[2025-06-09 15:12:19.022][info][45128][main.cpp:38] the predict out = 1.4841695e+22
+[2025-06-09 16:44:50.565][info][45542][infer_impl.cc:75] cleaning the shm_ptr at the first time.
+[2025-06-09 16:44:56.569][info][45542][main.cpp:38] the predict out = -9.4165494e-26
+[2025-06-09 16:45:23.620][info][45853][infer_impl.cc:75] cleaning the shm_ptr at the first time.
+[2025-06-09 16:45:29.621][info][45853][main.cpp:38] the predict out = 363230700000
+[2025-06-09 16:46:28.594][info][46193][infer_impl.cc:75] cleaning the shm_ptr at the first time.
+[2025-06-09 16:46:34.596][info][46193][main.cpp:38] the predict out = -3.039579e+25
+[2025-06-09 16:52:32.209][info][46511][infer_impl.cc:77] cleaning the shm_ptr at the first time.
+[2025-06-09 16:52:38.212][info][46511][main.cpp:38] the predict out = -2.865385e-19
+[2025-06-09 16:53:37.465][info][46862][infer_impl.cc:77] cleaning the shm_ptr at the first time.
+[2025-06-09 16:53:39.466][info][46862][main.cpp:38] the predict out = 4.1877648e+29
+[2025-06-09 17:11:20.832][info][47473][infer_impl.cc:77] cleaning the shm_ptr at the first time.
+[2025-06-09 17:11:21.832][info][47473][main.cpp:38] the predict out = 5811691000000
+[2025-06-09 17:12:29.665][info][47768][infer_impl.cc:77] cleaning the shm_ptr at the first time.
+[2025-06-09 17:12:30.665][info][47768][main.cpp:38] the predict out = -1.5085456e-21
+[2025-06-09 17:13:39.848][info][48062][infer_impl.cc:77] cleaning the shm_ptr at the first time.
+[2025-06-09 17:13:40.848][info][48062][main.cpp:38] the predict out = 3.0540855e-07
+[2025-06-09 17:17:52.789][info][48404][main.cpp:29] data_len = 3, feat_len_wt_ts = 6
+[2025-06-09 17:17:52.789][info][48404][infer_impl.cc:77] cleaning the shm_ptr at the first time.
+[2025-06-09 17:17:53.789][info][48404][main.cpp:41] the predict out = -1.6820846e+22
+[2025-06-09 17:17:54.009][info][48417][main.cpp:29] data_len = 3, feat_len_wt_ts = 6
+[2025-06-09 17:17:54.009][info][48417][infer_impl.cc:77] cleaning the shm_ptr at the first time.
+[2025-06-09 17:17:55.010][info][48417][main.cpp:41] the predict out = -4.627092e+23
+[2025-06-09 17:17:55.267][info][48425][main.cpp:29] data_len = 3, feat_len_wt_ts = 6
+[2025-06-09 17:17:55.267][info][48425][infer_impl.cc:77] cleaning the shm_ptr at the first time.
+[2025-06-09 17:17:56.267][info][48425][main.cpp:41] the predict out = -3.0246198e+21
+[2025-06-09 17:18:11.853][info][48708][main.cpp:29] data_len = 3, feat_len_wt_ts = 6
+[2025-06-09 17:18:11.853][info][48708][infer_impl.cc:77] cleaning the shm_ptr at the first time.
+[2025-06-09 17:18:14.854][info][48708][main.cpp:42] the predict out = 3.3173269e-09
+[2025-06-09 17:22:42.847][info][49023][main.cpp:29] data_len = 3, feat_len_wt_ts = 6
+[2025-06-09 17:22:42.847][info][49023][infer_impl.cc:77] cleaning the shm_ptr at the first time.
+[2025-06-09 17:22:45.848][info][49023][main.cpp:42] the predict out = -0.16012204
+[2025-06-09 17:37:20.975][info][50664][main.cpp:28] data_len = 3, feat_len_wt_ts = 6
+[2025-06-09 17:37:20.975][info][50664][infer_impl.cc:77] cleaning the shm_ptr at the first time.
+[2025-06-09 17:37:23.976][info][50664][main.cpp:41] the predict out = 7.024713e-31
+[2025-06-09 17:59:27.997][info][50719][main.cpp:28] data_len = 3, feat_len_wt_ts = 6
+[2025-06-09 17:59:27.998][info][50719][infer_impl.cc:77] cleaning the shm_ptr at the first time.
+[2025-06-09 17:59:30.999][info][50719][main.cpp:41] the predict out = 5.1333147e+17
+[2025-06-10 15:42:09.919][info][52235][main.cpp:30] data_len = 3, feat_len_wt_ts = 6
+[2025-06-10 15:42:09.919][info][52235][infer_impl.cc:77] cleaning the shm_ptr at the first time.
+[2025-06-10 15:42:12.920][info][52235][main.cpp:46] the predict out = 1.1406662e-08
+[2025-06-10 15:43:37.004][info][52599][main.cpp:33] data_len = 3, feat_len_wt_ts = 4
+[2025-06-10 15:43:37.004][info][52599][infer_impl.cc:77] cleaning the shm_ptr at the first time.
+[2025-06-10 15:43:40.006][info][52599][main.cpp:49] the predict out = 3.0939e-41
+[2025-06-10 15:44:23.369][info][52894][main.cpp:33] data_len = 3, feat_len_wt_ts = 4
+[2025-06-10 15:44:23.369][info][52894][infer_impl.cc:77] cleaning the shm_ptr at the first time.
+[2025-06-10 15:44:26.370][info][52894][main.cpp:49] the predict out = 3.2492e-41
+[2025-06-10 15:44:55.167][info][53190][main.cpp:33] data_len = 3, feat_len_wt_ts = 4
+[2025-06-10 15:44:55.167][info][53190][infer_impl.cc:77] cleaning the shm_ptr at the first time.
+[2025-06-10 15:44:55.167][error][53190][infer_impl.cc:103] Input data length does not match expected frame size
+[2025-06-10 15:44:55.167][error][53190][infer_impl.cc:155] preprocess error.
+[2025-06-10 15:44:55.167][error][53190][infer_impl.cc:177] err code = 1
+[2025-06-10 15:44:56.167][error][53190][infer_impl.cc:103] Input data length does not match expected frame size
+[2025-06-10 15:44:56.167][error][53190][infer_impl.cc:155] preprocess error.
+[2025-06-10 15:44:56.167][error][53190][infer_impl.cc:177] err code = 1
+[2025-06-10 15:44:57.167][error][53190][infer_impl.cc:103] Input data length does not match expected frame size
+[2025-06-10 15:44:57.167][error][53190][infer_impl.cc:155] preprocess error.
+[2025-06-10 15:44:57.167][error][53190][infer_impl.cc:177] err code = 1
+[2025-06-10 15:45:58.252][info][53555][main.cpp:33] data_len = 4, feat_len_wt_ts = 4
+[2025-06-10 15:45:58.252][info][53555][infer_impl.cc:77] cleaning the shm_ptr at the first time.
+[2025-06-10 15:46:02.254][info][53555][main.cpp:49] the predict out = 3.2059e-41
+[2025-06-10 15:48:15.620][info][53904][main.cpp:33] data_len = 4, feat_len_wt_ts = 4
+[2025-06-10 15:48:15.620][info][53904][infer_impl.cc:77] cleaning the shm_ptr at the first time.
+[2025-06-10 15:48:19.622][info][53904][main.cpp:49] the predict out = 3.12e-41
+[2025-06-10 15:48:57.283][info][54724][main.cpp:33] data_len = 4, feat_len_wt_ts = 3
+[2025-06-10 15:48:57.283][info][54724][infer_impl.cc:77] cleaning the shm_ptr at the first time.
+[2025-06-10 15:48:57.283][error][54724][infer_impl.cc:103] Input data length does not match expected frame size: FEAT_LEN = 6, but data frame_size = 5
+[2025-06-10 15:48:57.283][error][54724][infer_impl.cc:155] preprocess error.
+[2025-06-10 15:48:57.283][error][54724][infer_impl.cc:177] err code = 1
+[2025-06-10 15:48:58.283][error][54724][infer_impl.cc:103] Input data length does not match expected frame size: FEAT_LEN = 6, but data frame_size = 5
+[2025-06-10 15:48:58.283][error][54724][infer_impl.cc:155] preprocess error.
+[2025-06-10 15:48:58.283][error][54724][infer_impl.cc:177] err code = 1
+[2025-06-10 15:48:59.284][error][54724][infer_impl.cc:103] Input data length does not match expected frame size: FEAT_LEN = 6, but data frame_size = 5
+[2025-06-10 15:48:59.284][error][54724][infer_impl.cc:155] preprocess error.
+[2025-06-10 15:48:59.284][error][54724][infer_impl.cc:177] err code = 1
