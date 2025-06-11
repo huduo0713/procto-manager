@@ -22,10 +22,13 @@
 
 /*******************算法配置********************************/ 
 // 数据长度, 根据实际的数据集进行修改，该值决定batch == DATA_LEN时， 执行infer方法
-#define DATA_LEN  60
+#define DATA_LEN  6
 
 // 特征长度， 该值 > 2, 前两个值存储时间戳, 根据实际的数据集进行修改
-#define FEAT_LEN   6
+#define FEAT_LEN   4
+
+// 推理频率 推理时间=循环任务周期*FREQ 
+#define FREQ    2
 /*******************算法配置********************************/ 
 
 
@@ -33,27 +36,42 @@ struct AlgoOutput{
     float value;
 };
 
+enum CONFIG_TABLE{
+    WRITE_INDEX,  // 记录数据写索引
+    EXECUTE_COUNT,   // 记录执行次数，该值可以结合任务周期计算时间
+    INFER_READY, //  记录推理是否准备好， 但WRITE_INDEX=DATA_LEN时，INFER_READY就已经准备好 
+};
+
 class Infer {
 public:
     Infer(int feat_len);
     ~Infer();
 
+    int write_data_to_memory();
     void pretty_print();
     int preprocess(long int ts, const int* data, int feat_len);
     int infer();
     int postprocess();
     int run(bool startup, long int ts, int *data, int feat_len, AlgoOutput* out);
-    inline void set_index(float val){
+    void update_execute_count();
+    inline void set_index(CONFIG_TABLE index, float val){
         assert(shm_ptr_);
         float *const ptr = shm_ptr_;
-        ptr[0] = val;
+        ptr[index] = val;
     }
 
-    inline float get_index(){
+    inline float get_index(CONFIG_TABLE index){
         assert(shm_ptr_);
         float *const ptr = shm_ptr_;
-        return ptr[0];
+        return ptr[index];
 
+    }
+
+private:
+    // 循环缓冲处理, index 范围：[1, N)
+    inline void advance_index(int &index, int N) {
+        index++;
+        index = (index == N) ? 1 : index;
     }
 
 private:
@@ -66,6 +84,8 @@ private:
 
     int write_index_ = 1;       // 当前写入位置, 从index 1开始，index 0 存储中间变量
     bool shm_initialized_;  // 是否初始化标记
+    bool infer_ready_ = false; // 使能推理 
+    int execute_count_ = 0;    // 执行次数
 
     float* shm_ptr_;        // 共享内存映射指针
     int shm_fd_;            // 共享内存文件描述符
