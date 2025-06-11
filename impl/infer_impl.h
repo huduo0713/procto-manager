@@ -47,7 +47,7 @@ public:
     Infer(int feat_len);
     ~Infer();
 
-    int write_data_to_memory();
+    int write_config_to_memory();
     void pretty_print();
     int preprocess(long int ts, const int* data, int feat_len);
     int infer();
@@ -71,7 +71,9 @@ private:
     // 循环缓冲处理, index 范围：[1, N)
     inline void advance_index(int &index, int N) {
         index++;
+        // 写入内存
         index = (index == N) ? 1 : index;
+        set_index(CONFIG_TABLE::WRITE_INDEX, index);
     }
 
 private:
