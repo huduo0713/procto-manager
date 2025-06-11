@@ -11,8 +11,7 @@
 #include <iostream>
 
 void Infer::pretty_print(){
-    log_info("\n");
-    fflush(stdout);
+    printf("\n");
     printf("Matrix [data_len_=%d, feat_len=%d]:\n", data_len_, feat_len_);
     for (int i = 0; i < data_len_ + CONFIG_LEN; ++i) {
         // 配置项
@@ -43,9 +42,6 @@ Infer::Infer(int feat_len)
 }
 
 Infer::~Infer() {
-    if (write_data_to_memory()){
-        log_error("write data failed.");
-    }
     if (shm_ptr_) {
         munmap(shm_ptr_, TOTAL_SIZE);
     }
@@ -134,8 +130,6 @@ int Infer::preprocess(long int ts, const int* data, int feat_len) {
     if (write_index_ == data_len_){
         infer_ready_ = true;
     }
-    // 环形写索引更新, 从 index 1~DATA_LEN循环, 注意不是从0开始，因为index 0 存储了中间变量
-    advance_index(write_index_, data_len_ + CONFIG_LEN);
 
     if (frame_size > 0) {
         // 先写时间戳：将时间戳放到最前面的两个数
@@ -148,8 +142,12 @@ int Infer::preprocess(long int ts, const int* data, int feat_len) {
         for (int i = 0; i < frame_size - 2; ++i) {
             base_ptr[2 + i] = static_cast<float>(data[i]);
         }
+        // 写入配置到内存
+        write_config_to_memory();
         // 打印内存结构
         pretty_print();
+        // 环形写索引更新, 从 index 1~DATA_LEN循环, 注意不是从0开始，因为index 0 存储了中间变量
+        advance_index(write_index_, data_len_ + CONFIG_LEN);
     }
 
     return 0;
@@ -202,7 +200,7 @@ int Infer::run(bool startup, long int ts, int *data, int feat_len, AlgoOutput* o
 
 }
 
-int Infer::write_data_to_memory(){
+int Infer::write_config_to_memory(){
     if(!shm_initialized_){
         return 1;
     }
