@@ -23,18 +23,18 @@ int main() {
     AlgoOutput out;
 
     // 模拟特征长度, 这个特征值需要和算法的特征长度一致
-    int feat_len = 4;
+    int feat_len = 2;
 
     // 模拟采集的数据
-    int data[] = {1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20};
+    uint16_t data[] = {1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20};
     // 处理data得到data_len的实际长度
-    int data_len = (sizeof(data) / sizeof(data[0])) / (FEAT_LEN - 2);
-    int feat_len_wt_ts = feat_len - 2;
-    log_info("data_len = {}, feat_len_wt_ts = {}", data_len, feat_len_wt_ts);
-    // 每一batch循环
+    int data_len = (sizeof(data) / sizeof(data[0])) / feat_len;
+    log_info("data_len = {}", data_len);
+    // 每一帧循环
     for (int i = 0; i < data_len; ++i) {
         // 获取时间戳
         long int ts = get_timestamp_ms();
+        // log_info("ts = {}", ts);
         /**********输入***********/
         // i == 0: 模拟第一次运行清空内存；
         // ts： 传递时间戳
@@ -42,7 +42,7 @@ int main() {
 
         /**********输出***********/
         // &out: 算法结果写入到out指向的地址中
-        if(!algo(i == 0, ts, &data[i * (feat_len - 2)], feat_len, &out)){
+        if(!algo(i == 0, ts, reinterpret_cast<uint8_t*>(data + i * feat_len), feat_len, DataType::DINT16, &out)){
             log_info("the predict out = {}", out.value);
         }
         

@@ -16,16 +16,21 @@ void Infer::pretty_print(){
     for (int i = 0; i < data_len_ + CONFIG_LEN; ++i) {
         // 配置项
         if (i == 0){
-            printf("Row %02d [c] ", i);
+            printf("Row %02d [config] ", i);
+            printf("write_index=%d | execute_count=%d | infer_ready=%d ", write_index_, execute_count_, infer_ready_);
+            printf("\n");
+            continue;
         // 指向当前写的index
         }else if (i == write_index_) {
             printf("Row %02d --> ", i);
         } else {
             printf("Row %02d     ", i);
         }
-
-        for (int j = 0; j < feat_len_; ++j) {
-            printf("%16.3f ", shm_ptr_[i * feat_len_ + j]);
+        // i >= 1
+        DataTable* data = reinterpret_cast<DataTable*>(shm_ptr_ + i * sizeof(DataTable));
+        printf("%16ld ", data->timestamp_ms);
+        for (int j = 0; j < feat_len_; ++j){
+            printf("%16d ", data->data[j]);
         }
         printf("\n");
     }
@@ -37,7 +42,8 @@ Infer::Infer(int feat_len)
       write_index_(CONFIG_LEN), shm_initialized_(false), shm_ptr_(nullptr), shm_fd_(-1)
 {
     // 多申请CONFIG行，用于存储中间变量，第一行第一个存write_index, 其他暂时保留
-    TOTAL_SIZE = (data_len_ + CONFIG_LEN) * feat_len_ * data_type_len_;
+    // 每一行都使用8字节的空间存储时间戳
+    TOTAL_SIZE = (data_len_ + CONFIG_LEN) * ( 8 + feat_len_ * data_type_len_);
     shm_name_ = "algo_sharemem";
 }
 
@@ -82,7 +88,7 @@ void Infer::initSharedMemory(bool flag) {
     }
 
     //   长度是字节长度
-    shm_ptr_ = static_cast<float*>(mmap(NULL, TOTAL_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED, shm_fd_, 0));
+    shm_ptr_ = static_cast<uint8_t*>(mmap(NULL, TOTAL_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED, shm_fd_, 0));
     if (shm_ptr_ == MAP_FAILED) {
         log_error("mmap failed");
         return;
@@ -90,9 +96,10 @@ void Infer::initSharedMemory(bool flag) {
 
 
     // 加载所有内存数据到成员变量
-    infer_ready_ = get_index(CONFIG_TABLE::INFER_READY);
-    execute_count_ = get_index(CONFIG_TABLE::EXECUTE_COUNT);
-    int index = get_index(CONFIG_TABLE::WRITE_INDEX);
+    auto config_table = reinterpret_cast<ConfigTable*>(shm_ptr_);
+    infer_ready_ = config_table->infer_ready;
+    execute_count_ = config_table->execute_count;
+    int index = config_table->write_index;
     // 首次执行时，存储write_index_需要初始化为1， 而不是0
     write_index_ = index ? index : 1;
 
@@ -100,19 +107,23 @@ void Infer::initSharedMemory(bool flag) {
 }
 
 /**
- * 共享内存格式定义为一个二维数组 Matrix[y+1,x+2]，其中
- * y = batch长度(多少帧)，也就是data_len; 
- * x = 一帧数据的特征个数，也就是feat_len； 
- * Row 0:  write_index | reserved  | resv_1   | resv_2   | resv_3 ... | resv_x
- * Row 1:  t_stamp_H   | t_stamp_L | feat_1   | feat_2   | feat_3 ... | feat_x
+ * 共享内存格式定义为按字节存储的二维数组 Matrix[data_len+1,feat_len*data_type+8]，其中
+ * data_len = 数据长度(多少帧), 数组的行数
+ * data_type = 数据类型，数据类型与算法无关，只和数据处理相关，类型由PLC的协议决定
+ * 8 表示 使用 8字节存储毫秒级的时间戳
+ * feat_len = 一帧数据的特征个数；feat_len*data_type + 8 就是数组的列数
+ * 如下：
+ * 
+ * Row 0:  write_index(4Byte) | execute_count(4Byte) | infer_ready(4Byte)   | resv_2   | resv_3 ...
+ * Row 1:  time_stamp(8Byte)  | feat_1 ... | feat_2 ... | feat_x (x=feat_len)
  * ...
- * Row y:  t_stamp_H   | t_stamp_L | feat_1   | feat_2   | feat_3 ... | feat_x
+ * Row 1:  time_stamp(8Byte)  | feat_1 ... | feat_2 ... | feat_x (x=feat_len)
  * 
  * 
 */
-int Infer::preprocess(long int ts, const int* data, int feat_len) {
-    // feat_len 包含 2 个时间戳 + data的长度
-    int frame_size = feat_len;
+int Infer::preprocess(uint64_t ts, uint8_t *data, int len, DataType type) {
+    // len  data的长度
+    int frame_size = len;
 
     // 确认拿到的数据是否等于算法的配置长度
     if (FEAT_LEN != frame_size) {
@@ -125,23 +136,21 @@ int Infer::preprocess(long int ts, const int* data, int feat_len) {
 
 
     // 初始化写数据指针
-    float* const base_ptr = shm_ptr_ + write_index_ * frame_size;
+    uint8_t* const base_ptr = shm_ptr_ + write_index_ * sizeof(DataTable);
     // 满足数据长度后才准备好推理的初步条件
     if (write_index_ == data_len_){
         infer_ready_ = true;
     }
 
     if (frame_size > 0) {
-        // 先写时间戳：将时间戳放到最前面的两个数
-        // high
-        base_ptr[0] = static_cast<float>(ts >> 32);
-        // low
-        base_ptr[1]  = static_cast<float>(ts & 0xFFFFFFFF);
+        // 指针转换
+        DataTable* const data_ptr = (DataTable*)base_ptr;
+        // 写入时间戳
+        data_ptr->timestamp_ms = ts;
 
-         // 再写入特征数据：（从 index 2 开始）, 长度要减去时间戳的长度2
-        for (int i = 0; i < frame_size - 2; ++i) {
-            base_ptr[2 + i] = static_cast<float>(data[i]);
-        }
+         // 再写入特征数据, 注意要乘以数据类型长度
+         memcpy(data_ptr->data, data, len * type);
+
         // 写入配置到内存
         write_config_to_memory();
         // 打印内存结构
@@ -173,18 +182,21 @@ int Infer::infer() {
     // 假设处理所有 DATA 数据, 从index 1开始
     for (int i = CONFIG_LEN; i < data_len_; ++i) {
         // 每一行的指针， 长度为FEAT_LEN
-        float* frame = shm_ptr_ + i * feat_len_;
+        DataTable* frame = (DataTable*)(shm_ptr_ + i * feat_len_);
     }
 
     return 0;
 }
 
-int Infer::run(bool startup, long int ts, int *data, int feat_len, AlgoOutput* out){
+int Infer::run(bool startup, uint64_t ts, uint8_t *data, int len, DataType type, AlgoOutput* out){
     int ret = 0;
+
+    //  检查配置数据长度, 不超过CONFIG_LEN行的空间
+    assert(sizeof(ConfigTable) <= (8 + feat_len_ * data_type_len_) * CONFIG_LEN);
     // init shared memory
     initSharedMemory(startup);
     // preprocess
-    ret = preprocess(ts, data, feat_len);
+    ret = preprocess(ts, data, len, type);
     if (ret){
         log_error("preprocess error.");
         return ret;
@@ -214,9 +226,9 @@ int Infer::postprocess() {
     log_info("[Postprocess] Done");
 }
 
-extern "C" int algo(bool startup, long int ts, int *data, int len, AlgoOutput* out){
+extern "C" int algo(bool startup, uint64_t ts, uint8_t *data, int len, DataType type, AlgoOutput* out){
     Infer infer(len);
-    int ret = infer.run(startup, ts, data, len, out);
+    int ret = infer.run(startup, ts, data, len, type, out);
     if (ret > 1){
         log_error("err code = {}", ret);
     }
