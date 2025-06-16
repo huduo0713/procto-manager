@@ -64,15 +64,15 @@ enum CONFIG_TABLE{
 
 class Infer {
 public:
-    Infer(int feat_len);
+    Infer(int feat_len, int feat_type);
     ~Infer();
 
     int write_config_to_memory();
     void pretty_print();
-    int preprocess(uint64_t ts, uint8_t *data, int len, DataType type);
-    int infer();
+    int preprocess(uint64_t ts, uint8_t *data, int len);
+    int infer(AlgoOutput* out);
     int postprocess();
-    int run(bool startup, uint64_t ts, uint8_t *data, int len, DataType type, AlgoOutput* out);
+    int run(bool startup, uint64_t ts, uint8_t *data, int len, AlgoOutput* out);
     void update_execute_count();
     inline void set_index(CONFIG_TABLE index, float val){
         assert(shm_ptr_);
@@ -105,9 +105,10 @@ private:
 private:
     void initSharedMemory(bool flag);
 
-    int data_len_;
-    int feat_len_;
-    int data_type_len_;
+    int data_len_;  // 数据帧数
+    int feat_len_;  // 特征数, 按个数计算
+    int feat_data_type_;  // 特征的数据类型
+    int row_size_;   // 按字节数计算
     size_t TOTAL_SIZE;
 
     int write_index_ = 1;       // 当前写入位置, 从index 1开始，index 0 存储中间变量
