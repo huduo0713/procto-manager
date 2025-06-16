@@ -182,6 +182,7 @@ int Infer::infer(AlgoOutput* out) {
     }
 
     log_info("Execute infer....");
+    /***************处理过程***************/
     // 处理满足条件的所有 DATA 帧数据, 从index 1开始
     for (int i = CONFIG_LEN; i < data_len_ + CONFIG_LEN; ++i) {
         // 每一行的数据指针获取
@@ -189,6 +190,11 @@ int Infer::infer(AlgoOutput* out) {
         // 打印， frame->data长度是FEAT_LEN
         log_info("row[{}].ts = {}, data[0] = {}", i, frame->timestamp_ms, frame->data[0]);
     }
+    /***************处理过程***************/
+
+    // 模拟输出
+    out->value = 30.5;
+
 
     return 0;
 }
