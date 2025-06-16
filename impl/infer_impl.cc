@@ -37,13 +37,15 @@ void Infer::pretty_print(){
     return;
 }
 
-Infer::Infer(int feat_len)
-    : data_len_(DATA_LEN), feat_len_(feat_len), data_type_len_(DATA_TYPE_LEN),
+Infer::Infer(int feat_len, int type)
+    : data_len_(DATA_LEN), feat_len_(feat_len), feat_data_type_(type),
       write_index_(CONFIG_LEN), shm_initialized_(false), shm_ptr_(nullptr), shm_fd_(-1)
 {
     // 多申请CONFIG行，用于存储中间变量，第一行第一个存write_index, 其他暂时保留
+    //每一行的长度 = 8B ts + 特征尺寸*数据类型
+    row_size_ = 8 +  feat_len_ * feat_data_type_;
     // 每一行都使用8字节的空间存储时间戳
-    TOTAL_SIZE = (data_len_ + CONFIG_LEN) * ( 8 + feat_len_ * data_type_len_);
+    TOTAL_SIZE = (data_len_ + CONFIG_LEN) * row_size_;
     shm_name_ = "algo_sharemem";
 }
 
@@ -121,7 +123,7 @@ void Infer::initSharedMemory(bool flag) {
  * 
  * 
 */
-int Infer::preprocess(uint64_t ts, uint8_t *data, int len, DataType type) {
+int Infer::preprocess(uint64_t ts, uint8_t *data, int len) {
     // len  data的长度
     int frame_size = len;
 
@@ -149,7 +151,7 @@ int Infer::preprocess(uint64_t ts, uint8_t *data, int len, DataType type) {
         data_ptr->timestamp_ms = ts;
 
          // 再写入特征数据, 注意要乘以数据类型长度
-         memcpy(data_ptr->data, data, len * type);
+         memcpy(data_ptr->data, data, len * feat_data_type_);
 
         // 写入配置到内存
         write_config_to_memory();
@@ -168,9 +170,10 @@ void Infer::update_execute_count(){
 
 /**
  * 推理方法
+ * 推理结果: float类型。存储在 out->value 中
  * 返回 0 表示成功， 1 表示推理条件不满足， 2 表示内存初始化失败
 */
-int Infer::infer() {
+int Infer::infer(AlgoOutput* out) {
     if (!shm_initialized_ || !shm_ptr_) return 2;
 
     // 如果infer_ready_为false 或 execute_count_ % FREQ不为0，则表示不满足条件，直接返回 
@@ -179,30 +182,32 @@ int Infer::infer() {
     }
 
     log_info("Execute infer....");
-    // 假设处理所有 DATA 数据, 从index 1开始
-    for (int i = CONFIG_LEN; i < data_len_; ++i) {
-        // 每一行的指针， 长度为FEAT_LEN
-        DataTable* frame = (DataTable*)(shm_ptr_ + i * feat_len_);
+    // 处理满足条件的所有 DATA 帧数据, 从index 1开始
+    for (int i = CONFIG_LEN; i < data_len_ + CONFIG_LEN; ++i) {
+        // 每一行的数据指针获取
+        DataTable* frame = (DataTable*)(shm_ptr_ + i * row_size_);
+        // 打印， frame->data长度是FEAT_LEN
+        log_info("row[{}].ts = {}, data[0] = {}", i, frame->timestamp_ms, frame->data[0]);
     }
 
     return 0;
 }
 
-int Infer::run(bool startup, uint64_t ts, uint8_t *data, int len, DataType type, AlgoOutput* out){
+int Infer::run(bool startup, uint64_t ts, uint8_t *data, int len, AlgoOutput* out){
     int ret = 0;
 
     //  检查配置数据长度, 不超过CONFIG_LEN行的空间
-    assert(sizeof(ConfigTable) <= (8 + feat_len_ * data_type_len_) * CONFIG_LEN);
+    assert(sizeof(ConfigTable) <= row_size_ * CONFIG_LEN);
     // init shared memory
     initSharedMemory(startup);
     // preprocess
-    ret = preprocess(ts, data, len, type);
+    ret = preprocess(ts, data, len);
     if (ret){
         log_error("preprocess error.");
         return ret;
     }
     // infer
-    ret = infer();
+    ret = infer(out);
     if (ret > 1){
         log_error("infer error.");
     }
@@ -227,8 +232,8 @@ int Infer::postprocess() {
 }
 
 extern "C" int algo(bool startup, uint64_t ts, uint8_t *data, int len, DataType type, AlgoOutput* out){
-    Infer infer(len);
-    int ret = infer.run(startup, ts, data, len, type, out);
+    Infer infer(len, type);
+    int ret = infer.run(startup, ts, data, len, out);
     if (ret > 1){
         log_error("err code = {}", ret);
     }
