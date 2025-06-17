@@ -9,17 +9,22 @@ include_directories(
     ${CMAKE_SOURCE_DIR}/impl
     ${CMAKE_SOURCE_DIR}/common/utils
     ${CMAKE_SOURCE_DIR}/3rdparty/spdlog/include
-    
+    ${CMAKE_SOURCE_DIR}/include
     )
 
 
+# 链接 xgboost 的动态库路径
+link_directories(${CMAKE_SOURCE_DIR}/lib)
 
 # lib
-add_library(algo_temp SHARED impl/infer_impl.cc)
+file(GLOB IMPL_SOURCES "impl/*.cc")
+
+add_library(algo_temp SHARED ${IMPL_SOURCES})
 
 target_link_libraries(algo_temp
     pthread
-    rt             
+    rt
+    xgboost             
     )
 
 
