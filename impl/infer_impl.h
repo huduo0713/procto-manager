@@ -11,6 +11,11 @@
 #include <string>
 #include <cstdint>
 
+#include "parsed_time.h"
+#include "time_feature_utils.h"
+#include "xgboost_model.h"
+
+
 /*******************默认配置********************************/ 
 // 存储在共享内存里面的全局配置，默认为1行，存储在第0行
 #define CONFIG_LEN 1

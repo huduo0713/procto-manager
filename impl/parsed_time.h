@@ -18,6 +18,6 @@ struct ParsedTime {
 };
 
 // 将 float 高/低位还原的时间戳转为结构体时间
-ParsedTime timestamp_to_time(float high_part, float low_part);
+ParsedTime timestamp_to_time(uint64_t timestamp);
 
 #endif // PARSED_TIME_H

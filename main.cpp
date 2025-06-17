@@ -26,7 +26,7 @@ int main() {
     int feat_len = 2;
 
     // 模拟采集的数据
-    uint16_t data[] = {1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20};
+    uint16_t data[] = {14,2,16,4,18,6,20,8,22,10,54,12,13,14,15,16,17,18,19,20};
     // 处理data得到data_len的实际长度
     int data_len = (sizeof(data) / sizeof(data[0])) / feat_len;
     log_info("data_len = {}", data_len);
