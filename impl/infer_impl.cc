@@ -181,6 +181,12 @@ int Infer::infer(AlgoOutput* out) {
 
     log_info("Execute infer....");
     log_info("get write_index = {}", get_index(CONFIG_TABLE::WRITE_INDEX));
+    int index = get_index(CONFIG_TABLE::WRITE_INDEX) - 1;
+
+    std::vector<ParsedTime> time_series;
+    std::vector<float> in_temp;
+    std::vector<std::vector<float>> features;
+
     /***************处理过程***************/
     // 处理满足条件的所有 DATA 帧数据, 从index 1开始
     for (int i = CONFIG_LEN; i < data_len_ + CONFIG_LEN; ++i) {
@@ -188,15 +194,51 @@ int Infer::infer(AlgoOutput* out) {
         DataTable* frame = (DataTable*)(shm_ptr_ + i * row_size_);
         // 打印， frame->data长度是FEAT_LEN
         log_info("row[{}].ts = {}, data[0] = {}", i, frame->timestamp_ms, frame->data[0]);
+        
+        time_series.push_back(timestamp_to_time(frame->timestamp_ms));
+        in_temp.push_back(frame->data[0]);
     }
+    features.push_back(in_temp);
     /***************处理过程***************/
+    // 数据清洗
 
-    // 模拟输出
-    out->value = 30.5;
+    // 特征工程
+    std::vector<float> mean = compute_average_feature(time_series, features);
+    float feature_1 = static_cast<float>(getDayOfYear(time_series[index]));
+    float feature_2 = static_cast<float>(getMinuteOfDay(time_series[index]));
+    float feature_3 = static_cast<float>(isWeekend(time_series[index]));
+
+    if (feature_1 == -1.0f || feature_2 == -1.0f || feature_3 == -1.0f)
+    {
+        return 3;
+    }
+
+    feature_3 = (feature_3 == 0.f || feature_3 == 1.f) ? 1.0f : 0.f;
+
+    // 数据封装准备
+    std::vector<float> value_vec = {feature_1, feature_2, feature_3, mean[0]};
+    
+    // 验证算法调用结果是否正确
+    // std::vector<float> value_vec = {337.f, 411.f, feature_3, mean[0]};
 
 
+    std::vector<float> prediction;
+    
+    // 模型准备
+    XGBoostModel model;
+    if (!model.LoadModel("resources/xgboost_model_v2.bin")) {
+        return -1;
+    }
+
+
+    if (model.Predict(value_vec, value_vec.size(), prediction)) {
+        out->value = prediction[0];
+    } else {
+        return -1.0;
+    }
     return 0;
 }
+
 
 int Infer::run(bool startup, uint64_t ts, uint8_t *data, int len, AlgoOutput* out){
     int ret = 0;
