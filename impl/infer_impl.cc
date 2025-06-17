@@ -157,8 +157,6 @@ int Infer::preprocess(uint64_t ts, uint8_t *data, int len) {
         write_config_to_memory();
         // 打印内存结构
         pretty_print();
-        // 环形写索引更新, 从 index 1~DATA_LEN循环, 注意不是从0开始，因为index 0 存储了中间变量
-        advance_index(write_index_, data_len_ + CONFIG_LEN);
     }
 
     return 0;
@@ -182,6 +180,7 @@ int Infer::infer(AlgoOutput* out) {
     }
 
     log_info("Execute infer....");
+    log_info("get write_index = {}", get_index(CONFIG_TABLE::WRITE_INDEX));
     /***************处理过程***************/
     // 处理满足条件的所有 DATA 帧数据, 从index 1开始
     for (int i = CONFIG_LEN; i < data_len_ + CONFIG_LEN; ++i) {
@@ -217,6 +216,9 @@ int Infer::run(bool startup, uint64_t ts, uint8_t *data, int len, AlgoOutput* ou
     if (ret > 1){
         log_error("infer error.");
     }
+
+    // 流程处理完毕后，环形写索引更新, 从 index 1~DATA_LEN循环, 注意不是从0开始，因为index 0 存储了中间变量
+    advance_index(write_index_, data_len_ + CONFIG_LEN);
     return ret;
 
 

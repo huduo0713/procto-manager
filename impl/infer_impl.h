@@ -25,7 +25,7 @@
 #define DATA_LEN  6
 
 // 特征长度， 根据实际的数据集进行修改
-#define FEAT_LEN  2 
+#define FEAT_LEN  2
 // 推理频率 推理时间=循环任务周期*FREQ 
 #define FREQ    2
 /*******************算法配置********************************/ 
@@ -86,11 +86,16 @@ public:
         }
     }
 
-    inline ConfigTable get_index(CONFIG_TABLE index){
+    inline uint32_t get_index(CONFIG_TABLE index){
         assert(shm_ptr_);
         const ConfigTable *ptr = (ConfigTable*)shm_ptr_;
-        return *ptr;
-
+        if (index == CONFIG_TABLE::EXECUTE_COUNT){
+            return ptr->execute_count;
+        }else if (index == CONFIG_TABLE::INFER_READY){
+            return ptr->infer_ready;
+        }else{
+            return ptr->write_index;
+        }
     }
 
 private:
