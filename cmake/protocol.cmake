@@ -12,6 +12,7 @@ set(THIRDPARTY_INCLUDE_DIRS
 function(set_common_include_dirs target)
     target_include_directories(${target} PRIVATE ${PROTOCOL_INCLUDE_DIR})
     target_include_directories(${target} PRIVATE ${ROOT_DIR})
+    target_include_directories(${target} PRIVATE ${ROOT_DIR}/3rdparty/spdlog/include)
     # 额外路径
     target_include_directories(${target} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
 endfunction()
@@ -19,6 +20,7 @@ endfunction()
 
 # 指定源文件
 file(GLOB SRC_FILES
+        src/*.cc
         src/*.c
 )
 
@@ -39,7 +41,8 @@ target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE
 # 设置包含目录
 set_common_include_dirs(${CMAKE_PROJECT_NAME})
 
-# 定义依赖的库变量
+# 定义依赖的库变量.
+set(COMMON_LIBS pthread)
 
 # 链接库文件, 顺序不能变, 被依赖的库放后面
 target_link_libraries(${CMAKE_PROJECT_NAME} PUBLIC ${PROTOCOL_LIBS}  ${COMMON_LIBS})

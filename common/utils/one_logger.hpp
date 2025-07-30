@@ -100,6 +100,7 @@ private:
 
 //// 定义简化的日志宏
 #define one_logger OneLogger::getInstance()
+#define log_debug(...)    one_logger->log(spdlog::source_loc{__FILE__, __LINE__, __func__}, spdlog::level::debug, __VA_ARGS__)
 #define log_info(...)    one_logger->log(spdlog::source_loc{__FILE__, __LINE__, __func__}, spdlog::level::info, __VA_ARGS__)
 #define log_error(...)   one_logger->log(spdlog::source_loc{__FILE__, __LINE__, __func__}, spdlog::level::err,  __VA_ARGS__)
 #define log_warn(...)    one_logger->log(spdlog::source_loc{__FILE__, __LINE__, __func__}, spdlog::level::warn, __VA_ARGS__)

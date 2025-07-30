@@ -13,8 +13,9 @@ source ../../script/.env
 IP=$DEVICE_IP
 PORT=$DEVICE_GDB_SERVER_PORT
 PROJECT_NAME=$(basename $PROJECT_ROOT)
+source $PROJECT_ROOT/tools/color.sh
 
-echo "Hint: bash run.bash [gdb | gdbsvr | valgrind]."
+echo_green "Hint: bash run.bash [gdb | gdbsvr | valgrind]."
 if [[ "$1" == "gdbsvr" ]];then
   echo "entering gdb server mode, listen port: $IP:$PORT"
   sudo LD_LIBRARY_PATH=$LD_LIBRARY_PATH gdbserver $IP:$PORT ./build/demo $MODEL_DIR $INPUT

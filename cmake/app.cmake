@@ -3,7 +3,7 @@
 if (PLT_SOPHON_USE_SOPHON_LIB)
     set(DEPEND_SOPHON_FILE ${ROOT_DIR}/platform/sophon/media/ff_video_decode.cpp)
 endif ()
-add_executable(demo demo/main.c
+add_executable(demo demo/main.cc
         # ${ROOT_DIR}/common/utils/config_manager.cpp
         # ${ROOT_DIR}/common/manage/service/websocket/web_socket_service_task.cpp
         # ${ROOT_DIR}/common/manage/task/base_task.cpp
