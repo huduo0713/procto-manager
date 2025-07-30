@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include "common/api/proto_common.h"
+#include "common/api/proto_driver.h"
 #include "proto_modbus.h"
 #include "common/utils/one_logger.hpp"
 
@@ -22,13 +23,13 @@ int main() {
     };
 
     // 协议初始化
-    if (proto_modbus_driver_init(&ctx) != PROTO_SUCCESS) {
+    if (proto_driver_init(&ctx) != PROTO_SUCCESS) {
         log_info("Init failed\n");
         return -1;
     }
 
     //协议连接
-    if (proto_modbus_connect(&ctx) != PROTO_SUCCESS) {
+    if (proto_connect(&ctx) != PROTO_SUCCESS) {
         log_info("Connect failed\n");
         return -1;
     }
@@ -42,7 +43,7 @@ int main() {
     };
 
     // 读取地址99， 长度2的寄存器地址并打印
-    if (proto_modbus_read(&ctx, &req) == PROTO_SUCCESS) {
+    if (proto_read(&ctx, &req) == PROTO_SUCCESS) {
         log_info("Read success: {} {}\n", data[0], data[1]);
     } else {
         log_info("Read failed\n");
@@ -51,14 +52,14 @@ int main() {
     data[0] = 123;
     data[1] = 456;
     // 连续写入2个值，地址99开始，并打印结果
-    if (proto_modbus_write(&ctx, &req) == PROTO_SUCCESS) {
+    if (proto_write(&ctx, &req) == PROTO_SUCCESS) {
         log_info("Write success\n");
     } else {
         log_info("Write failed\n");
     }
 
     // 断开和销毁对象
-    proto_modbus_disconnect(&ctx);
-    proto_modbus_driver_release(&ctx);
+    proto_disconnect(&ctx);
+    proto_driver_release(&ctx);
     return 0;
 }
