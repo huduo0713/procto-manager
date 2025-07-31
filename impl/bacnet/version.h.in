@@ -1,0 +1,6 @@
+// version.h.in
+#pragma once
+
+#define PROJECT_VERSION "@VERSION_CONTENT@"
+#define PROJECT_BUILD_TIME "@PROJECT_BUILD_TIME@"
+#define GIT_COMMIT_HASH "@GIT_COMMIT_HASH@"
