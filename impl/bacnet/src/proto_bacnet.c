@@ -16,6 +16,7 @@
 
 #include "bacnet/whois.h"
 #include "bacnet/basic/binding/address.h"
+#include "bacnet/basic/sys/mstimer.h"
 #include "bacnet/rp.h"      // ReadProperty
 #include "bacnet/wp.h"      // WriteProperty
 #include "bacnet/iam.h"     // I-Am decoding
@@ -58,6 +59,10 @@ static uint32_t g_target_device_id = 0;
 static uint8_t g_RxBuf[MAX_MPDU] = {0};
 // 最新接收报文的长度
 static uint16_t g_RxBuf_Len = 0;
+/* 调试信息打印 */
+static bool BACnet_Debug_Enabled = true;
+/* 错误检测标志 */
+static bool Error_Detected = false; 
 
 /*
  * ============================================================================
@@ -94,9 +99,37 @@ static void my_i_am_handler(
     // 调用库函数 iam_decode_service_request 来从原始字节流中解析出有意义的数据。
     len = iam_decode_service_request(
         service_request, &device_id, &max_apdu, &segmentation, &vendor_id);
-    
+    if (BACnet_Debug_Enabled)
+    {
+        fprintf(stderr, "Received I-Am Request"); /* 打印接收到 I-Am 请求的调试信息 */
+    }
     // 检查解码是否成功，并且设备ID是否是我们正在寻找的那个
-    if (len > 0 && device_id == g_target_device_id) {
+    if (len != -1 && device_id == g_target_device_id) {
+        if (BACnet_Debug_Enabled)
+        {
+            fprintf(stderr, " from %lu, MAC = ", (unsigned long)device_id); /* 打印设备 ID */
+            if ((src->mac_len == 6) && (src->len == 0)) /* 如果是 IP 地址 */
+            {
+                fprintf(
+                    stderr, "%u.%u.%u.%u %02X%02X\n", (unsigned)src->mac[0],
+                    (unsigned)src->mac[1], (unsigned)src->mac[2],
+                    (unsigned)src->mac[3], (unsigned)src->mac[4],
+                    (unsigned)src->mac[5]);
+            }
+            else /* 如果是其他 MAC 地址 */
+            {
+                for (unsigned i = 0; i < src->mac_len; i++)
+                {
+                    fprintf(stderr, "%02X", (unsigned)src->mac[i]);
+                    if (i < (src->mac_len - 1))
+                    {
+                        fprintf(stderr, ":");
+                    }
+                }
+                fprintf(stderr, "\n");
+            }
+        }
+            
         // 关键步骤：调用库函数 address_add 将设备ID和其网络地址(src)的映射关系
         // 添加到 bacnet-stack 内部维护的一个全局地址缓存表中。
         // 之后所有需要与此设备通信的函数，只需提供device_id即可，库会自动查找其IP地址。
@@ -105,6 +138,32 @@ static void my_i_am_handler(
         g_target_device_found = true;
         printf("驱动: 发现目标设备 %u\n", device_id);
     }
+}
+
+/* Abort 服务处理函数 */
+static void MyAbortHandler(
+    BACNET_ADDRESS *src, uint8_t invoke_id, uint8_t abort_reason, bool server)
+{
+    /* FIXME: 验证 src 和 invoke_id */
+    (void)src; /* 避免编译器警告未使用的参数 */
+    (void)invoke_id; /* 避免编译器警告未使用的参数 */
+    (void)server; /* 避免编译器警告未使用的参数 */
+    fprintf(
+        stderr, "BACnet Abort: %s\n", bactext_abort_reason_name(abort_reason)); /* 打印 Abort 原因 */
+    Error_Detected = true; /* 设置错误检测标志 */
+}
+
+/* Reject 服务处理函数 */
+static void
+MyRejectHandler(BACNET_ADDRESS *src, uint8_t invoke_id, uint8_t reject_reason)
+{
+    /* FIXME: 验证 src 和 invoke_id */
+    (void)src; /* 避免编译器警告未使用的参数 */
+    (void)invoke_id; /* 避免编译器警告未使用的参数 */
+    fprintf(
+        stderr, "BACnet Reject: %s\n",
+        bactext_reject_reason_name(reject_reason)); /* 打印 Reject 原因 */
+    Error_Detected = true; /* 设置错误检测标志 */
 }
 
 /*
@@ -157,11 +216,19 @@ int proto_driver_init(proto_ctx_t *ctx) {
     // 关键步骤：注册我们的 I-Am 回调函数。
     // 这告诉协议栈，当收到一个 Unconfirmed-Request 类型的、服务是 I_AM 的报文时，
     // 就去调用 my_i_am_handler 函数。
+    Device_Init(NULL); /* 初始化设备对象 */
+    /* 注意: 此应用程序不需要处理 who-is，这会给用户带来困惑! */
+    /* 为我们未实现的所有服务设置处理程序 */
+    /* 发送正确的 reject 消息是必需的... */
+    apdu_set_unrecognized_service_handler_handler(handler_unrecognized_service);
+    /* 我们必须实现 read property - 这是必需的! */
+    apdu_set_confirmed_handler(
+        SERVICE_CONFIRMED_READ_PROPERTY, handler_read_property);
+    /* 处理返回的回复(请求) */
     apdu_set_unconfirmed_handler(SERVICE_UNCONFIRMED_I_AM, my_i_am_handler);
-    
-    // bip_init 是 BACnet/IP 数据链路层的初始化函数。
-    // 传入 NULL 表示让它自动绑定到系统默认的网络接口上。
-    if (!bip_init(NULL)) return PROTO_ERROR_INIT;
+    /* 处理返回的任何错误 */
+    apdu_set_abort_handler(MyAbortHandler);
+    apdu_set_reject_handler(MyRejectHandler);
     
     printf("BACnet 驱动初始化成功。\n");
     return PROTO_SUCCESS;
@@ -195,11 +262,38 @@ int proto_connect(proto_ctx_t *ctx) {
     bacnet_config_t *config = (bacnet_config_t *)ctx->config;
     g_target_device_id = config->target_device_id;
     g_target_device_found = false;
+    unsigned timeout_milliseconds = 0; /* 超时时间 (毫秒) */
+    unsigned delay_milliseconds = 100; /* 接收响应的延迟时间 (毫秒) */
+    struct mstimer apdu_timer = { 0 }; /* APDU 定时器 */
+    struct mstimer datalink_timer = { 0 }; /* 数据链路层定时器 */
+    BACNET_ADDRESS dest = { 0 }; /* 目标 BACnet 地址 */
+    bool global_broadcast = true; /* 是否为全局广播 */
+    bool repeat_forever = false; /* 是否永远重复发送 */
+    long retry_count = 100; /* 重试次数 */
+    
+    if (global_broadcast) /* 如果是全局广播 */
+    {
+        datalink_get_broadcast_address(&dest); /* 获取数据链路层广播地址 */
+    }
+
+    /* 设置自身信息 */
+    Device_Set_Object_Instance_Number(BACNET_MAX_INSTANCE); /* 设置本设备的对象实例号 (通常为最大值以避免冲突) */
+    address_init(); /* 初始化地址绑定 */
+    dlenv_init(); /* 初始化数据链路层环境变量 */
+    atexit(datalink_cleanup); /* 注册程序退出时调用的数据链路层清理函数 */
+    if (timeout_milliseconds == 0) /* 如果未指定超时时间 */
+    {
+        timeout_milliseconds = apdu_timeout() * apdu_retries(); /* 使用默认的 APDU 超时时间和重试次数计算 */
+    }
+    mstimer_set(&apdu_timer, timeout_milliseconds); /* 设置 APDU 定时器 */
+    mstimer_set(&datalink_timer, 1000); /* 设置数据链路层维护定时器 (1秒) */
 
     printf("正在通过 Who-Is 发现设备 %u...\n", g_target_device_id);
     // Send_WhoIs 是库提供的函数，用于构建并发送一个 Who-Is 报文。
     // 两个参数分别代表要寻找的设备ID的最小和最大范围。这里我们只找一个特定设备。
-    Send_WhoIs(g_target_device_id, g_target_device_id);
+    // Send_WhoIs(g_target_device_id, g_target_device_id);
+    Send_WhoIs_To_Network(
+        &dest, -1, -1); /* 向网络发送 Who-Is 请求 */
 
     // 这是一个简化的同步等待循环，用于接收网络报文。
     // 在一个真正的多线程应用中，这里应该是一个独立的、持续运行的接收线程。
@@ -212,11 +306,35 @@ int proto_connect(proto_ctx_t *ctx) {
         BACNET_ADDRESS src;
         uint8_t buffer[MAX_MPDU];
         // datalink_receive 是数据链路层的核心函数，用于从网卡接收一个BACnet包。
-        uint16_t pdu_len = datalink_receive(&src, buffer, MAX_MPDU, 0);
+        uint16_t pdu_len = datalink_receive(&src, buffer, MAX_MPDU, delay_milliseconds);
         if (pdu_len) {
             // npdu_handler 是协议栈的入口。收到任何包都“喂”给它，
             // 它会负责解析并触发相应的回调函数。
             npdu_handler(&src, buffer, pdu_len);
+        }
+        if (mstimer_expired(&datalink_timer)) /* 如果数据链路层定时器超时 */
+        {
+            datalink_maintenance_timer(
+                mstimer_interval(&datalink_timer) / 1000); /* 执行数据链路层维护 */
+            mstimer_reset(&datalink_timer); /* 重置数据链路层定时器 */
+        }
+        if (mstimer_expired(&apdu_timer)) /* 如果 APDU 定时器超时 */
+        {
+            if (repeat_forever || retry_count) /* 如果需要永远重复或还有重试次数 */
+            {
+                Send_WhoIs_To_Network(
+                    &dest, -1,
+                    -1); /* 重新发送 Who-Is 请求 */
+                if (retry_count > 0) /* 如果还有重试次数 */
+                {
+                   retry_count--; /* 重试次数减一 */
+                }
+            }
+            else /* 如果不需要重复且没有重试次数 */
+            {
+                break; /* 退出循环 */
+            }
+            mstimer_reset(&apdu_timer); /* 重置 APDU 定时器 */
         }
     }
 
