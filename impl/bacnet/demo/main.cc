@@ -8,7 +8,7 @@
 int main() {
     // --- 准备 BACnet 协议配置 ---
     bacnet_config_t bacnet_conf = {
-        1917025
+        5678 // 目标设备的实例ID
     };
 
     // --- 使用通用上下文结构体 ---
@@ -37,13 +37,13 @@ int main() {
     // --- 读取操作 ---
     float temp_value = 0.0f;
     proto_request_t read_req = {
-        "analog-input:0:present-value",
+        "analog-output:1:present-value",
         0, // BACnet 中忽略
         0, // BACnet 中忽略
         &temp_value // 传入一个浮点数指针用于接收返回值
     };
 
-    printf("\n--- 正在读取 'analog-input:0:present-value' ---\n");
+    printf("\n--- 正在读取 'analog-output:1:present-value' ---\n");
     if (proto_read(&ctx, &read_req) == PROTO_SUCCESS) {
         printf("读取成功: %.2f\n", temp_value);
     } else {
@@ -53,13 +53,13 @@ int main() {
     // --- 写入操作 ---
     float setpoint_value = 23.5f;
     proto_request_t write_req = {
-        "analog-value:0:present-value", // 假设设备上有 AV,0
+        "analog-output:1:present-value", // 假设设备上有 AV,1
         0,
         0,
         &setpoint_value // 传入一个包含要写入值的浮点数指针
     };
 
-    printf("\n--- 正在写入 'analog-value:0:present-value' ---\n");
+    printf("\n--- 正在写入 'analog-output:1:present-value' ---\n");
     if (proto_write(&ctx, &write_req) == PROTO_SUCCESS) {
         printf("写入成功\n");
     } else {
