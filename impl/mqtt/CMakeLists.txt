@@ -18,7 +18,9 @@ include(${ROOT_DIR}/cmake/protocol.cmake)
 if (PLT_SOPHON_USE_SOPHON_LIB)
     set(DEPEND_SOPHON_FILE ${ROOT_DIR}/platform/sophon/media/ff_video_decode.cpp)
 endif ()
-add_executable(demo demo/main.cc
+add_executable(
+        demo demo/main.cc
+        # demo demo/test_async.c
         # ${ROOT_DIR}/common/utils/config_manager.cpp
         # ${ROOT_DIR}/common/manage/service/websocket/web_socket_service_task.cpp
         # ${ROOT_DIR}/common/manage/task/base_task.cpp
