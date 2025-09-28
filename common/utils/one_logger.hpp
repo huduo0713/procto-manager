@@ -54,7 +54,7 @@ public:
     // 获取单例实例
     static spdlog::logger* getInstance() {
         static std::once_flag initFlag;
-        // 使用局部静态变量实现打到哪里模式，避免在类外初始化静态成员变量(类外初始化必须放在cpp中不够优雅)
+        // 使用局部静态变量实现打到哪里模式，避免在类外初始化静态成员变量
         static std::shared_ptr<spdlog::logger> logger_;
         std::call_once(initFlag, []() {
             // 创建控制台输出和文件输出的日志器

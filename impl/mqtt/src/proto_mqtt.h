@@ -21,7 +21,7 @@ extern "C" {
 
 #define MAX_MESSAGE_SIZE 1024
 #define MAX_MSG_BUFFER_SIZE 100
-#define KEEP_ALIVE_INTERVAL 20
+// 移除固定保活间隔，使用配置参数
 #define DEFAULT_TIMEOUT_MS 5000
 #define HEARTBEAT_PREFIX "HEARTBEAT_"
 
@@ -64,10 +64,11 @@ typedef struct {
     char pub_topic[64];
     char sub_topic[64];
     int qos;
+    int retained;                 // 发布消息是否保留（0: 不保留，1: 保留）
     int timeout_ms;
     int keepalive_interval;    // 保活间隔（秒）
     int reconnect_interval;    // 重连间隔（秒）
-    int max_reconnect_attempts; // 最大重连次数
+    int max_reconnect_attempts; // 最大重连次数（0表示无限重连）
     int enable_auto_reconnect;  // 是否启用自动重连
 } mqtt_config_t;
 
@@ -82,7 +83,7 @@ typedef struct {
 // 异步回调函数类型定义
 typedef void (*proto_async_callback_t)(proto_ctx_t *ctx, int result, void *userdata);
 
-// MQTT扩展上下文结构（包含消息缓冲区和保活机制）
+// MQTT扩展上下文结构（包含消息缓冲区和重连机制）
 typedef struct {
     proto_ctx_t base;                    // 基础上下文
     MQTT_Message msg_buffer[MAX_MSG_BUFFER_SIZE];  // 消息缓冲区
@@ -92,7 +93,7 @@ typedef struct {
     pthread_mutex_t msg_mutex;           // 消息缓冲区互斥锁
     pthread_cond_t msg_cond;             // 消息缓冲区条件变量
     
-    // 实例状态管理（替代全局状态）
+    // 实例状态管理
     MQTTAsync client;                    // MQTT客户端实例
     connect_status_t connect_status;     // 连接状态
     operation_status_t operation_status; // 操作状态
@@ -100,21 +101,9 @@ typedef struct {
     pthread_mutex_t state_mutex;         // 状态互斥锁
     pthread_cond_t conn_cond;            // 连接状态条件变量
     
-    // 保活和重连机制
+    // 重连机制
     int reconnect_attempts;              // 当前重连尝试次数
-    int last_heartbeat_time;             // 最后心跳时间
-    int connection_lost_time;            // 连接丢失时间
-    pthread_t keepalive_thread;          // 保活监控线程
-    pthread_t reconnect_thread;          // 重连线程
-    int keepalive_running;               // 保活线程运行标志
-    int reconnect_running;               // 重连线程运行标志
-    pthread_mutex_t keepalive_mutex;     // 保活机制互斥锁
-    
-    // 连接质量监控
-    int heartbeat_sent_count;            // 发送的心跳数量
-    int heartbeat_ack_count;             // 收到确认的心跳数量
-    int last_network_delay;              // 最后网络延迟（毫秒）
-    int connection_quality;              // 连接质量评分（0-100）
+    int connection_lost_time;            // 连接丢失时间（毫秒），用于延迟重连
     
     // 异步回调支持
     proto_async_callback_t connect_callback;    // 连接回调函数
@@ -148,11 +137,6 @@ int proto_write(proto_ctx_t *ctx, proto_request_t *req);
 // 读取MQTT消息
 int proto_read(proto_ctx_t *ctx, proto_request_t *req);
 
-// 获取连接状态
-connect_status_t proto_get_connect_status(proto_ctx_t *ctx);
-
-// 获取操作状态（用于循环调用判断）
-operation_status_t proto_get_operation_status(proto_ctx_t *ctx);
 
 // ============================================================================
 // 异步回调函数声明
@@ -180,8 +164,7 @@ int wait_for_connection(mqtt_ctx_t* ctx, int timeout_ms);               // 等�
 // ============================================================================
 // 工具函数声明
 // ============================================================================
-void* keepalive_monitor_thread(void* arg);                               // 保活监控线程
-void* auto_reconnect_thread(void* arg);                                 // 自动重连线程
+// 保活监控线程已移除，使用MQTT协议原生保活机制
 int get_current_time_ms(void);                                          // 获取当前时间（毫秒）
 void create_connect_options(MQTTAsync_connectOptions* conn_opts, mqtt_config_t* cfg); // 创建连接选项
 void create_disconnect_options(MQTTAsync_disconnectOptions* disc_opts, int timeout_ms, mqtt_ctx_t* ctx); // 创建断开选项

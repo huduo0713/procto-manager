@@ -28,7 +28,7 @@ void create_connect_options(MQTTAsync_connectOptions* conn_opts, mqtt_config_t* 
     conn_opts->struct_version = 0;
     
     // 设置连接参数
-    conn_opts->keepAliveInterval = KEEP_ALIVE_INTERVAL;  // 保活间隔
+    conn_opts->keepAliveInterval = cfg->keepalive_interval > 0 ? cfg->keepalive_interval : 60;  // 使用配置的保活间隔，默认60秒
     conn_opts->cleansession = 1;                         // 清理会话
     conn_opts->connectTimeout = cfg->timeout_ms / 1000;  // 连接超时（秒）
     conn_opts->retryInterval = 0;                        // 重试间隔
@@ -80,157 +80,54 @@ void create_disconnect_options(MQTTAsync_disconnectOptions* disc_opts, int timeo
     disc_opts->onFailure = onDisconnectFailure; // 断开失败回调
     disc_opts->context = ctx;                  // 上下文指针
 }
-void* keepalive_monitor_thread(void* arg) {
-    mqtt_ctx_t* mqtt_ctx = (mqtt_ctx_t*)arg;
-    if (!mqtt_ctx || !mqtt_ctx->base.config) {
-        printf("[KeepAlive] Invalid context, thread exiting\n");
-        return NULL;
-    }
-    
-    mqtt_config_t* cfg = (mqtt_config_t*)mqtt_ctx->base.config;
-    printf("[KeepAlive] Monitor thread started\n");
-    
-    // 主循环：每秒执行一次保活检查
-    while (mqtt_ctx->keepalive_running) {
-        pthread_mutex_lock(&mqtt_ctx->keepalive_mutex);
-        
-        int current_time = get_current_time_ms();
-        
-        if (get_connect_status(mqtt_ctx) == CON_OK) {
-            // 连接正常，执行保活操作
-            mqtt_ctx->last_heartbeat_time = current_time;
-            
-            // 发送心跳消息（如果配置了保活间隔）
-            if (cfg->keepalive_interval > 0) {
-                char heartbeat_msg[64];
-                snprintf(heartbeat_msg, sizeof(heartbeat_msg), "%s%d", HEARTBEAT_PREFIX, current_time);
-                
-                MQTTAsync_message msg = MQTTAsync_message_initializer;
-                msg.payload = heartbeat_msg;
-                msg.payloadlen = strlen(heartbeat_msg);
-                msg.qos = 0;        // 心跳消息使用QoS 0，确保快速传输
-                msg.retained = 0;   // 不保留心跳消息
-                
-                MQTTAsync_responseOptions opts = MQTTAsync_responseOptions_initializer;
-                if (MQTTAsync_sendMessage(mqtt_ctx->client, cfg->pub_topic, &msg, &opts) == MQTTASYNC_SUCCESS) {
-                    mqtt_ctx->heartbeat_sent_count++;
-                }
-            }
-            
-            // 计算连接质量（心跳确认率）
-            if (mqtt_ctx->heartbeat_sent_count > 0) {
-                mqtt_ctx->connection_quality = (mqtt_ctx->heartbeat_ack_count * 100) / mqtt_ctx->heartbeat_sent_count;
-                
-                // 每5次心跳显示统计信息
-                if (mqtt_ctx->heartbeat_sent_count % 5 == 0) {
-                    printf("[KeepAlive] Stats: Sent=%d, ACK=%d, Quality=%d%%\n", 
-                           mqtt_ctx->heartbeat_sent_count, 
-                           mqtt_ctx->heartbeat_ack_count, 
-                           mqtt_ctx->connection_quality);
-                }
-                
-                // 连接质量警告
-                if (mqtt_ctx->connection_quality < 50) {
-                    printf("[KeepAlive] WARNING: Connection quality is low (%d%%)\n", mqtt_ctx->connection_quality);
-                }
-            }
-        } else if (get_connect_status(mqtt_ctx) == DCON_OK && mqtt_ctx->connection_lost_time == 0) {
-            // 检测到连接丢失
-            mqtt_ctx->connection_lost_time = current_time;
-            printf("[KeepAlive] Connection lost detected at %d\n", current_time);
-        }
-        
-        pthread_mutex_unlock(&mqtt_ctx->keepalive_mutex);
-        sleep(1);  // 每秒检查一次
-    }
-    
-    printf("[KeepAlive] Monitor thread stopped\n");
-    return NULL;
+
+/**
+ * @brief 设置连接状态（线程安全）
+ * @param ctx MQTT上下文指针
+ * @param status 新的连接状态
+ */
+ void set_connect_status(mqtt_ctx_t* ctx, connect_status_t status) {
+    if (!ctx) return;
+    pthread_mutex_lock(&ctx->state_mutex);
+    ctx->connect_status = status;
+    pthread_cond_signal(&ctx->conn_cond);
+    pthread_mutex_unlock(&ctx->state_mutex);
 }
 
 /**
- * @brief 自动重连线程函数
- * 功能：
- * 1. 监控连接丢失事件
- * 2. 按配置间隔自动尝试重连
- * 3. 限制最大重连次数
- * 4. 处理重连失败和成功情况
- * 5. 线程安全的重连状态管理
- * 
- * 重连策略：
- * - 检测到连接丢失后等待reconnect_interval秒
- * - 最多尝试max_reconnect_attempts次
- * - 每次重连失败后增加重连计数
- * - 重连成功后重置计数
+ * @brief 获取连接状态（线程安全）
+ * @param ctx MQTT上下文指针
+ * @return 当前连接状态
  */
-void* auto_reconnect_thread(void* arg) {
-    mqtt_ctx_t* mqtt_ctx = (mqtt_ctx_t*)arg;
-    if (!mqtt_ctx || !mqtt_ctx->base.config) {
-        printf("[AutoReconnect] Invalid context, thread exiting\n");
-        return NULL;
-    }
-    
-    mqtt_config_t* cfg = (mqtt_config_t*)mqtt_ctx->base.config;
-    printf("[AutoReconnect] Reconnect thread started\n");
-    
-    // 主循环：每2秒检查一次重连条件
-    while (mqtt_ctx->reconnect_running) {
-        pthread_mutex_lock(&mqtt_ctx->keepalive_mutex);
-        
-        // 检查是否需要重连的条件：
-        // 1. 连接状态为断开
-        // 2. 已记录连接丢失时间
-        // 3. 启用了自动重连
-        // 4. 未超过最大重连次数
-        if (get_connect_status(mqtt_ctx) == DCON_OK && 
-            mqtt_ctx->connection_lost_time > 0 &&
-            cfg->enable_auto_reconnect &&
-            mqtt_ctx->reconnect_attempts < cfg->max_reconnect_attempts) {
-            
-            int current_time = get_current_time_ms();
-            int time_since_lost = current_time - mqtt_ctx->connection_lost_time;
-            
-            // 检查是否到了重连时间
-            if (time_since_lost >= cfg->reconnect_interval * 1000) {
-                printf("[AutoReconnect] Attempting reconnection (attempt %d/%d)\n", 
-                       mqtt_ctx->reconnect_attempts + 1, cfg->max_reconnect_attempts);
-                
-                pthread_mutex_unlock(&mqtt_ctx->keepalive_mutex);
-                
-                // 检查MQTT客户端是否仍然有效（防止在释放过程中重连）
-                if (mqtt_ctx->client == NULL) {
-                    printf("[AutoReconnect] MQTT client is NULL, stopping reconnection thread\n");
-                    pthread_mutex_lock(&mqtt_ctx->keepalive_mutex);
-                    mqtt_ctx->reconnect_running = 0;
-                    pthread_mutex_unlock(&mqtt_ctx->keepalive_mutex);
-                    break;
-                }
-                
-                // 配置重连选项
-                MQTTAsync_connectOptions conn_opts;
-                create_connect_options(&conn_opts, cfg);
-                conn_opts.context = mqtt_ctx;  // 设置上下文
-                
-                // 发起异步重连
-                int result = MQTTAsync_connect(mqtt_ctx->client, &conn_opts);
-                
-                pthread_mutex_lock(&mqtt_ctx->keepalive_mutex);
-                
-                if (result == MQTTASYNC_SUCCESS) {
-                    printf("[AutoReconnect] Reconnection request sent successfully!\n");
-                } else {
-                    // 重连请求失败，增加重连计数
-                    mqtt_ctx->reconnect_attempts++;
-                    printf("[AutoReconnect] Reconnection request failed (attempt %d/%d)\n", 
-                           mqtt_ctx->reconnect_attempts, cfg->max_reconnect_attempts);
-                }
-            }
-        }
-        
-        pthread_mutex_unlock(&mqtt_ctx->keepalive_mutex);
-        sleep(2);  // 每2秒检查一次
-    }
-    
-    printf("[AutoReconnect] Reconnect thread stopped\n");
-    return NULL;
+connect_status_t get_connect_status(mqtt_ctx_t* ctx) {
+    if (!ctx) return CON_IDLE;
+    pthread_mutex_lock(&ctx->state_mutex);
+    connect_status_t status = ctx->connect_status;
+    pthread_mutex_unlock(&ctx->state_mutex);
+    return status;
+}
+
+/**
+ * @brief 设置操作状态（线程安全）
+ * @param ctx MQTT上下文指针
+ * @param status 新的操作状态
+ */
+void set_operation_status(mqtt_ctx_t* ctx, operation_status_t status) {
+    if (!ctx) return;
+    pthread_mutex_lock(&ctx->state_mutex);
+    ctx->operation_status = status;
+    pthread_mutex_unlock(&ctx->state_mutex);
+}
+
+/**
+ * @brief 获取操作状态（线程安全）
+ * @param ctx MQTT上下文指针
+ * @return 当前操作状态
+ */
+operation_status_t get_operation_status(mqtt_ctx_t* ctx) {
+    if (!ctx) return OP_IDLE;
+    pthread_mutex_lock(&ctx->state_mutex);
+    operation_status_t status = ctx->operation_status;
+    pthread_mutex_unlock(&ctx->state_mutex);
+    return status;
 }

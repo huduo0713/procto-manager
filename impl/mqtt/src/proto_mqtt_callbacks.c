@@ -7,8 +7,7 @@
  * 功能：
  * 1. 检测到连接丢失时自动调用
  * 2. 更新实例连接状态为断开
- * 3. 记录连接丢失时间戳
- * 4. 触发自动重连机制
+ * 3. 根据配置决定是否重连（支持有限次数或无限重连）
  */
 void onConnectionLost(void* context, char* cause) {
     mqtt_ctx_t* mqtt_ctx = (mqtt_ctx_t*)context;
@@ -22,10 +21,44 @@ void onConnectionLost(void* context, char* cause) {
         set_connect_status(mqtt_ctx, DCON_OK);  // 更新为断开状态
         printf("[MQTT] Connection lost. Cause: %s\n", (cause != NULL) ? cause : "Unknown");
         
-        // 记录连接丢失时间，供重连线程使用
-        pthread_mutex_lock(&mqtt_ctx->keepalive_mutex);
-        mqtt_ctx->connection_lost_time = get_current_time_ms();
-        pthread_mutex_unlock(&mqtt_ctx->keepalive_mutex);
+        // 灵活重连机制：支持有限次数重连和无限重连
+        mqtt_config_t* cfg = (mqtt_config_t*)mqtt_ctx->base.config;
+        if (cfg && cfg->enable_auto_reconnect) {
+            // 检查重连条件
+            int should_reconnect = 0;
+            
+            if (cfg->max_reconnect_attempts == 0) {
+                // 无限重连模式
+                should_reconnect = 1;
+                mqtt_ctx->reconnect_attempts++;
+                printf("[AutoReconnect] Attempting immediate reconnection (attempt %d, infinite mode)\n", 
+                       mqtt_ctx->reconnect_attempts);
+            } else if (mqtt_ctx->reconnect_attempts < cfg->max_reconnect_attempts) {
+                // 有限次数重连模式
+                should_reconnect = 1;
+                mqtt_ctx->reconnect_attempts++;
+                printf("[AutoReconnect] Attempting immediate reconnection (attempt %d/%d)\n", 
+                       mqtt_ctx->reconnect_attempts, cfg->max_reconnect_attempts);
+            } else {
+                // 已达到最大重连次数
+                printf("[AutoReconnect] Max reconnection attempts (%d) reached\n", cfg->max_reconnect_attempts);
+            }
+            
+            if (should_reconnect) {
+                // 配置重连选项
+                MQTTAsync_connectOptions conn_opts;
+                create_connect_options(&conn_opts, cfg);
+                conn_opts.context = mqtt_ctx;  // 设置上下文
+                
+                // 发起异步重连
+                int result = MQTTAsync_connect(mqtt_ctx->client, &conn_opts);
+                if (result == MQTTASYNC_SUCCESS) {
+                    printf("[AutoReconnect] Reconnection request sent successfully!\n");
+                } else {
+                    printf("[AutoReconnect] Reconnection request failed: %s\n", MQTTAsync_strerror(result));
+                }
+            }
+        }
     }
 }
 
@@ -40,9 +73,8 @@ void onConnectionLost(void* context, char* cause) {
  * 功能：
  * 1. 接收所有到达的MQTT消息
  * 2. 实现环形缓冲区存储消息（支持二进制数据）
- * 3. 特殊处理心跳消息
- * 4. 通知等待的读取线程
- * 5. 自动释放MQTT库内存
+ * 3. 通知等待的读取线程
+ * 4. 自动释放MQTT库内存
  */
 int messageArrived(void *context, char *topicName, int topicLen, MQTTAsync_message *message) {
     mqtt_ctx_t* mqtt_ctx = (mqtt_ctx_t*)context;
@@ -78,18 +110,6 @@ int messageArrived(void *context, char *topicName, int topicLen, MQTTAsync_messa
         size_t copy_len = (message->payloadlen < MAX_MESSAGE_SIZE) ? message->payloadlen : MAX_MESSAGE_SIZE;
         memcpy(new_msg->payload, message->payload, copy_len);
         new_msg->payloadlen = copy_len;  // 保存实际长度
-        
-        // 特殊处理：检查是否是心跳消息（仅对文本消息）
-        if (message->payloadlen < MAX_MESSAGE_SIZE) {
-            char* payload_str = (char*)message->payload;
-            if (strncmp(payload_str, HEARTBEAT_PREFIX, strlen(HEARTBEAT_PREFIX)) == 0) {
-                // 心跳消息确认，更新保活统计
-                pthread_mutex_lock(&mqtt_ctx->keepalive_mutex);
-                mqtt_ctx->heartbeat_ack_count++;
-                printf("[KeepAlive] Heartbeat ACK received: %s\n", payload_str);
-                pthread_mutex_unlock(&mqtt_ctx->keepalive_mutex);
-            }
-        }
     } else {
         new_msg->payload[0] = '\0';
         new_msg->payloadlen = 0;
@@ -121,7 +141,7 @@ int messageArrived(void *context, char *topicName, int topicLen, MQTTAsync_messa
  * 功能：
  * 1. 异步连接成功时自动调用
  * 2. 更新实例连接状态为已连接
- * 3. 重置重连计数和连接丢失时间
+ * 3. 重置重连计数
  * 4. 通知等待连接完成的线程
  */
 void onConnectSuccess(void* context, MQTTAsync_successData* response) {
@@ -138,11 +158,8 @@ void onConnectSuccess(void* context, MQTTAsync_successData* response) {
         printf("[MQTT] Connect success!\n");
         
         // 重置重连相关状态
-        pthread_mutex_lock(&mqtt_ctx->keepalive_mutex);
         mqtt_ctx->reconnect_attempts = 0;      // 重置重连计数
-        mqtt_ctx->connection_lost_time = 0;    // 清除连接丢失时间
         printf("[AutoReconnect] Reconnection successful!\n");
-        pthread_mutex_unlock(&mqtt_ctx->keepalive_mutex);
         
         // 连接成功后自动订阅topic
         mqtt_config_t* cfg = (mqtt_config_t*)mqtt_ctx->base.config;

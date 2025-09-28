@@ -1,141 +1,18 @@
 #include "proto_mqtt.h"
 
-
 /**
- * @brief 设置连接状态（线程安全）
- * @param ctx MQTT上下文指针
- * @param status 新的连接状态
- */
-void set_connect_status(mqtt_ctx_t* ctx, connect_status_t status) {
-    if (!ctx) return;
-    pthread_mutex_lock(&ctx->state_mutex);
-    ctx->connect_status = status;
-    pthread_cond_signal(&ctx->conn_cond);
-    pthread_mutex_unlock(&ctx->state_mutex);
-}
-
-/**
- * @brief 获取连接状态（线程安全）
- * @param ctx MQTT上下文指针
- * @return 当前连接状态
- */
-connect_status_t get_connect_status(mqtt_ctx_t* ctx) {
-    if (!ctx) return CON_IDLE;
-    pthread_mutex_lock(&ctx->state_mutex);
-    connect_status_t status = ctx->connect_status;
-    pthread_mutex_unlock(&ctx->state_mutex);
-    return status;
-}
-
-/**
- * @brief 设置操作状态（线程安全）
- * @param ctx MQTT上下文指针
- * @param status 新的操作状态
- */
-void set_operation_status(mqtt_ctx_t* ctx, operation_status_t status) {
-    if (!ctx) return;
-    pthread_mutex_lock(&ctx->state_mutex);
-    ctx->operation_status = status;
-    pthread_mutex_unlock(&ctx->state_mutex);
-}
-
-/**
- * @brief 获取操作状态（线程安全）
- * @param ctx MQTT上下文指针
- * @return 当前操作状态
- */
-operation_status_t get_operation_status(mqtt_ctx_t* ctx) {
-    if (!ctx) return OP_IDLE;
-    pthread_mutex_lock(&ctx->state_mutex);
-    operation_status_t status = ctx->operation_status;
-    pthread_mutex_unlock(&ctx->state_mutex);
-    return status;
-}
-
-/**
- * @brief 获取操作状态（用于循环调用判断）
- * @param ctx 协议上下文指针
- * @return 当前操作状态
- */
- operation_status_t proto_get_operation_status(proto_ctx_t *ctx) {
-    // 参数校验
-    if (!ctx) {
-        return OP_IDLE;
-    }
-
-    mqtt_ctx_t *mqtt_ctx = (mqtt_ctx_t *)ctx->userdata;
-    if (!mqtt_ctx) {
-        return OP_IDLE;
-    }
-
-    return get_operation_status(mqtt_ctx);
-}
-
-/**
- * @brief 获取连接状态
- * @param ctx 协议上下文指针
- * @return 当前连接状态
- */
-connect_status_t proto_get_connect_status(proto_ctx_t *ctx) {
-    // 参数校验
-    if (!ctx) {
-        return CON_IDLE;
-    }
-
-    mqtt_ctx_t *mqtt_ctx = (mqtt_ctx_t *)ctx->userdata;
-    if (!mqtt_ctx) {
-        return CON_IDLE;
-    }
-
-    return get_connect_status(mqtt_ctx);
-}
-
-/**
- * @brief 等待连接完成（支持超时）
- * @param ctx MQTT上下文指针
- * @param timeout_ms 超时时间（毫秒）
- * @return 0成功，-1超时
- */
-int wait_for_connection(mqtt_ctx_t* ctx, int timeout_ms) {
-    if (!ctx) return -1;
-    
-    pthread_mutex_lock(&ctx->state_mutex);
-    
-    // 如果已经连接或断开，直接返回
-    if (ctx->connect_status == CON_OK || ctx->connect_status == DCON_OK) {
-        pthread_mutex_unlock(&ctx->state_mutex);
-        return 0;
-    }
-    
-    // 等待连接状态变化
-    struct timespec timeout;
-    clock_gettime(CLOCK_REALTIME, &timeout);
-    timeout.tv_sec += timeout_ms / 1000;
-    timeout.tv_nsec += (timeout_ms % 1000) * 1000000;
-    if (timeout.tv_nsec >= 1000000000) {
-        timeout.tv_sec++;
-        timeout.tv_nsec -= 1000000000;
-    }
-    
-    int result = pthread_cond_timedwait(&ctx->conn_cond, &ctx->state_mutex, &timeout);
-    pthread_mutex_unlock(&ctx->state_mutex);
-    
-    return (result == 0) ? 0 : -1;
-}
-
-
-/**
- * @brief 异步写入MQTT消息
+ * @brief 写入MQTT消息
  * @param ctx 协议上下文指针
  * @param req 请求结构体指针
  * @return PROTO_SUCCESS 成功，其他值表示错误
  * 
  * 功能：
  * 1. 参数校验和连接状态检查
- * 2. 准备MQTT消息结构（支持二进制数据）
- * 3. 异步发布消息到指定主题
- * 4. 设置发送回调以获取发布结果
- * 5. 立即返回，不等待发布完成
+ * 2. 自动处理连接断开和重连
+ * 3. 准备MQTT消息结构（支持二进制数据）
+ * 4. 异步发布消息到指定主题
+ * 5. 设置发送回调以获取发布结果
+ * 6. 立即返回，不等待发布完成
  */
 int proto_write(proto_ctx_t *ctx, proto_request_t *req) {
     // 参数校验
@@ -150,10 +27,25 @@ int proto_write(proto_ctx_t *ctx, proto_request_t *req) {
     
     mqtt_config_t *cfg = (mqtt_config_t *)ctx->config;
     
-    // 检查连接状态
-    if (get_connect_status(mqtt_ctx) != CON_OK) {
-        set_operation_status(mqtt_ctx, OP_FAILED);
-        return PROTO_ERROR_WRITE;
+    // 如果未连接且启用了自动重连，自动尝试连接
+    connect_status_t status = get_connect_status(mqtt_ctx);
+    if (status != CON_OK) {
+        if (cfg->enable_auto_reconnect && status == DCON_OK) {
+            // 自动重连
+            printf("[MQTT] Auto-reconnecting for write operation...\n");
+            int connect_result = proto_connect(ctx);
+            if (connect_result != PROTO_SUCCESS) {
+                printf("[MQTT] Auto-reconnect failed for write operation\n");
+                return PROTO_ERROR_WRITE;
+            }
+            // 异步重连已发起。
+            set_operation_status(mqtt_ctx, OP_PENDING);
+            return PROTO_ERROR_WRITE;
+        } else {
+            // 未启用自动重连或连接状态不允许重连
+            set_operation_status(mqtt_ctx, OP_FAILED);
+            return PROTO_ERROR_WRITE;
+        }
     }
     
     // 准备异步消息结构
@@ -161,7 +53,7 @@ int proto_write(proto_ctx_t *ctx, proto_request_t *req) {
     msg.payload = req->value;                           // 消息内容
     msg.payloadlen = req->quantity;                     // 消息长度（支持二进制）
     msg.qos = cfg->qos;                                 // 服务质量等级
-    msg.retained = 0;                                   // 不保留消息
+    msg.retained = cfg->retained;                       // 是否保留由配置控制
 
     // 设置发送回调选项
     MQTTAsync_responseOptions opts = MQTTAsync_responseOptions_initializer;
@@ -183,17 +75,18 @@ int proto_write(proto_ctx_t *ctx, proto_request_t *req) {
 }
 
 /**
- * @brief 异步读取MQTT消息
+ * @brief 读取MQTT消息（带自动重连）
  * @param ctx 协议上下文指针
  * @param req 请求结构体指针
  * @return PROTO_SUCCESS 成功，PROTO_NO_DATA 没有数据可读，其他值表示错误
  * 
  * 功能：
  * 1. 参数校验和上下文检查
- * 2. 非阻塞检查消息缓冲区
- * 3. 从环形队列头部获取消息（支持二进制数据）
- * 4. 安全复制消息内容
- * 5. 更新缓冲区指针和计数
+ * 2. 自动处理连接断开和重连
+ * 3. 非阻塞检查消息缓冲区
+ * 4. 从环形队列头部获取消息（支持二进制数据）
+ * 5. 安全复制消息内容
+ * 6. 更新缓冲区指针和计数
  */
 int proto_read(proto_ctx_t *ctx, proto_request_t *req) {
     // 参数校验
@@ -206,10 +99,27 @@ int proto_read(proto_ctx_t *ctx, proto_request_t *req) {
         return PROTO_ERROR_PARAM;
     }
 
-    // 检查连接状态
-    if (get_connect_status(mqtt_ctx) != CON_OK) {
-        set_operation_status(mqtt_ctx, OP_FAILED);
-        return PROTO_ERROR_READ;
+    mqtt_config_t *cfg = (mqtt_config_t *)ctx->config;
+    
+    // 连接管理：如果未连接且启用了自动重连，自动尝试连接（异步，不等待）
+    connect_status_t status = get_connect_status(mqtt_ctx);
+    if (status != CON_OK) {
+        if (cfg->enable_auto_reconnect && status == DCON_OK) {
+            // 自动重连：发起连接请求
+            printf("[MQTT] Auto-reconnecting for read operation...\n");
+            int connect_result = proto_connect(ctx);
+            if (connect_result != PROTO_SUCCESS) {
+                printf("[MQTT] Auto-reconnect failed for read operation\n");
+                return PROTO_ERROR_READ;
+            }
+            // 异步重连已发起，不阻塞等待。读取返回无数据。
+            set_operation_status(mqtt_ctx, OP_PENDING);
+            return NO_DATA;
+        } else {
+            // 未启用自动重连或连接状态不允许重连
+            set_operation_status(mqtt_ctx, OP_FAILED);
+            return PROTO_ERROR_READ;
+        }
     }
 
     // 同步读取：直接从消息缓冲区读取
@@ -282,19 +192,8 @@ int proto_driver_init(proto_ctx_t *ctx) {
     pthread_mutex_init(&mqtt_ctx->state_mutex, NULL);
     pthread_cond_init(&mqtt_ctx->conn_cond, NULL);
     
-    // 初始化保活和重连机制
+    // 初始化重连机制（简化版，无需线程）
     mqtt_ctx->reconnect_attempts = 0;
-    mqtt_ctx->last_heartbeat_time = 0;
-    mqtt_ctx->connection_lost_time = 0;
-    mqtt_ctx->keepalive_running = 0;
-    mqtt_ctx->reconnect_running = 0;
-    pthread_mutex_init(&mqtt_ctx->keepalive_mutex, NULL);
-    
-    // 初始化连接质量监控
-    mqtt_ctx->heartbeat_sent_count = 0;
-    mqtt_ctx->heartbeat_ack_count = 0;
-    mqtt_ctx->last_network_delay = 0;
-    mqtt_ctx->connection_quality = 100;
     
     // 初始化回调函数
     mqtt_ctx->connect_callback = NULL;
@@ -316,7 +215,6 @@ int proto_driver_init(proto_ctx_t *ctx) {
         pthread_cond_destroy(&mqtt_ctx->msg_cond);
         pthread_mutex_destroy(&mqtt_ctx->state_mutex);
         pthread_cond_destroy(&mqtt_ctx->conn_cond);
-        pthread_mutex_destroy(&mqtt_ctx->keepalive_mutex);
         free(mqtt_ctx);
         printf("[MQTT] Create failed: %s\n", MQTTAsync_strerror(rc));
         return PROTO_ERROR_PARAM;
@@ -324,6 +222,9 @@ int proto_driver_init(proto_ctx_t *ctx) {
     
     // 设置回调函数
     MQTTAsync_setCallbacks(mqtt_ctx->client, mqtt_ctx, onConnectionLost, messageArrived, NULL);
+    
+    // 使用MQTT协议原生的保活机制，无需额外线程
+    // 使用直接重连机制，无需重连线程
     
     // 更新原始上下文
     *ctx = mqtt_ctx->base;
@@ -348,18 +249,6 @@ void proto_driver_release(proto_ctx_t *ctx) {
     
     printf("[MQTT] Releasing client resources...\n");
     
-    // 停止保活和重连线程
-    mqtt_ctx->keepalive_running = 0;
-    mqtt_ctx->reconnect_running = 0;
-    
-    // 等待线程结束
-    if (mqtt_ctx->keepalive_thread) {
-        pthread_join(mqtt_ctx->keepalive_thread, NULL);
-    }
-    if (mqtt_ctx->reconnect_thread) {
-        pthread_join(mqtt_ctx->reconnect_thread, NULL);
-    }
-    
     // 先断开连接，再销毁客户端
     if (mqtt_ctx->client) {
         // 如果还连接着，先断开
@@ -379,7 +268,6 @@ void proto_driver_release(proto_ctx_t *ctx) {
     pthread_cond_destroy(&mqtt_ctx->msg_cond);
     pthread_mutex_destroy(&mqtt_ctx->state_mutex);
     pthread_cond_destroy(&mqtt_ctx->conn_cond);
-    pthread_mutex_destroy(&mqtt_ctx->keepalive_mutex);
     
     // 释放内存
     free(mqtt_ctx);
