@@ -10,7 +10,7 @@ include(${ROOT_DIR}/cmake/compile_options.cmake)
 
 # 协议编译
 # 指定依赖
-set(PROTOCOL_LIBS paho-mqtt3c paho-mqtt3a)
+set(PROTOCOL_LIBS paho-mqtt3c paho-mqtt3a yaml)
 include(${ROOT_DIR}/cmake/protocol.cmake)
 
 ########################### demo测试文件 ############################
@@ -20,11 +20,6 @@ if (PLT_SOPHON_USE_SOPHON_LIB)
 endif ()
 add_executable(
         demo demo/main.cc
-        # demo demo/test_async.c
-        # ${ROOT_DIR}/common/utils/config_manager.cpp
-        # ${ROOT_DIR}/common/manage/service/websocket/web_socket_service_task.cpp
-        # ${ROOT_DIR}/common/manage/task/base_task.cpp
-        # ${DEPEND_SOPHON_FILE}
 )
 # 定义版本
 target_compile_definitions(demo PRIVATE
@@ -36,8 +31,8 @@ set_common_include_dirs(demo)
 
 # 链接 algo 库到 demo
 # 使用1.3.3版本
-target_link_libraries(demo PRIVATE ${CMAKE_PROJECT_NAME}
-)
+target_link_libraries(demo PRIVATE ${CMAKE_PROJECT_NAME} yaml)
+
 
 # overview compile information
 include(${ROOT_DIR}/cmake/overview.cmake)

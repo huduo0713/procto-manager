@@ -169,6 +169,10 @@ int get_current_time_ms(void);                                          // 获�
 void create_connect_options(MQTTAsync_connectOptions* conn_opts, mqtt_config_t* cfg); // 创建连接选项
 void create_disconnect_options(MQTTAsync_disconnectOptions* disc_opts, int timeout_ms, mqtt_ctx_t* ctx); // 创建断开选项
 
+// =========================================================================
+// 配置加载
+int load_mqtt_config_from_yaml(const char* yaml_path, mqtt_config_t* cfg);
+
 #ifdef __cplusplus
 }
 #endif

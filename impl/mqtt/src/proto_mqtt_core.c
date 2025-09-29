@@ -158,9 +158,24 @@ int proto_read(proto_ctx_t *ctx, proto_request_t *req) {
  */
 int proto_driver_init(proto_ctx_t *ctx) {
     // 参数校验
-    if (!ctx || !ctx->config) return PROTO_ERROR_PARAM;
+    if (!ctx) return PROTO_ERROR_PARAM;
     
-    mqtt_config_t *cfg = (mqtt_config_t *)ctx->config;
+    // 从 YAML 文件加载配置（使用堆内存，避免返回后悬垂指针）
+    mqtt_config_t *cfg = (mqtt_config_t *)malloc(sizeof(mqtt_config_t));
+    if (!cfg) {
+        return PROTO_ERROR_PARAM;
+    }
+    memset(cfg, 0, sizeof(mqtt_config_t));
+    const char* yaml_path = "/usr/runtime/protocol/mqtt/config.yaml";
+    int yaml_ret = load_mqtt_config_from_yaml(yaml_path, cfg);
+    if (yaml_ret != 0) {
+        printf("[MQTT] Failed to load config from YAML: %d\n", yaml_ret);
+        free(cfg);
+        return PROTO_ERROR_PARAM;
+    }
+    
+    // 将加载的配置设置到上下文中
+    ctx->config = cfg;
     
     // 配置参数校验
     if (!cfg->broker || !cfg->client_id) {
@@ -272,6 +287,12 @@ void proto_driver_release(proto_ctx_t *ctx) {
     // 释放内存
     free(mqtt_ctx);
     ctx->userdata = NULL;
+    
+    // 释放配置内存
+    if (ctx->config) {
+        free(ctx->config);
+        ctx->config = NULL;
+    }
     
     printf("[MQTT] Client resources released successfully\n");
 }

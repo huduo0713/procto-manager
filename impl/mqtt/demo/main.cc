@@ -23,28 +23,10 @@ int main() {
     
     std::cout << "=== MQTT协议测试程序 ===" << std::endl;
     
-    // 配置MQTT连接参数
-    mqtt_config_t config = {};
-    strncpy(config.broker, "tcp://1.92.111.153:1883", sizeof(config.broker) - 1);
-    strncpy(config.client_id, "mqtt_tester", sizeof(config.client_id) - 1);
-    strncpy(config.username, "Admin", sizeof(config.username) - 1);
-    strncpy(config.password, "123456", sizeof(config.password) - 1);
-    strncpy(config.pub_topic, "device/echo", sizeof(config.pub_topic) - 1);
-    strncpy(config.sub_topic, "device/echo", sizeof(config.sub_topic) - 1);
-    config.timeout_ms = 5000;
-    config.qos = 1;
-    config.retained = 0;                 // 默认不保留消息（可改为1测试保留）
-    config.keepalive_interval = 30;        // 保活间隔30秒
-    config.max_reconnect_attempts = 10;    // 最大重连10次，若为0则是无限重连
-
-    
-    config.enable_auto_reconnect = 1;      // 启用自动重连
-
     // 初始化协议上下文
     proto_ctx_t ctx = {};
     ctx.type = PROTO_TYPE_MQTT;
-    ctx.config = &config;
-    
+    ctx.config = NULL;  
     // 初始化MQTT客户端
     int init_result = proto_driver_init(&ctx);
     if (init_result != PROTO_SUCCESS) {
@@ -52,6 +34,31 @@ int main() {
         return -1;
     }
     std::cout << "MQTT客户端初始化成功" << std::endl;
+    
+    // 显示配置信息（从上下文获取）
+    mqtt_config_t *config = (mqtt_config_t *)ctx.config;
+    if (config) {
+        std::cout << "配置 => broker=" << config->broker 
+                  << ", client_id=" << config->client_id 
+                  << ", pub_topic=" << config->pub_topic 
+                  << ", sub_topic=" << config->sub_topic << std::endl;
+        
+        // 打印详细的连接参数
+        std::cout << "连接参数详情:" << std::endl;
+        std::cout << "  - Broker URI: " << config->broker << std::endl;
+        std::cout << "  - Client ID: " << config->client_id << std::endl;
+        std::cout << "  - Username: " << config->username << std::endl;
+        std::cout << "  - Password: " << config->password << std::endl;
+        std::cout << "  - Keepalive: " << config->keepalive_interval << " seconds" << std::endl;
+        std::cout << "  - QoS: " << config->qos << std::endl;
+        std::cout << "  - Retained: " << (config->retained ? "true" : "false") << std::endl;
+        std::cout << "  - Timeout: " << config->timeout_ms << " ms" << std::endl;
+        std::cout << "  - Auto Reconnect: " << (config->enable_auto_reconnect ? "enabled" : "disabled") << std::endl;
+        if (config->enable_auto_reconnect) {
+            std::cout << "  - Max Reconnect Attempts: " << (config->max_reconnect_attempts == 0 ? "unlimited" : std::to_string(config->max_reconnect_attempts)) << std::endl;
+            std::cout << "  - Reconnect Interval: " << config->reconnect_interval << " seconds" << std::endl;
+        }
+    }
     
     // 连接到MQTT服务器（异步）
     std::cout << "正在连接到MQTT服务器..." << std::endl;

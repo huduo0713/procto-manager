@@ -1,0 +1,50 @@
+# config.yaml
+
+# ==================================
+# 通用配置 (Common Configuration)
+# ----------------------------------
+common:
+  environment: "development"  # 对应 config.env
+  log_level: "debug"        # 对应 config.log_level (可选值: debug, info, warn, error)
+  log_file: "app.log"       # 对应 config.log_file (日志文件路径)
+
+# ==================================
+# 协议配置 (Protocols Configuration)
+# ----------------------------------
+protocols:
+
+  # --- MQTT 协议配置块 ---
+  mqtt:
+    # 启用/禁用此协议
+    enabled: true
+    # 代理/服务器地址 (Broker URI)
+    broker_uri: "tcp://1.92.111.153:1883" # 对应 config.broker
+    # 客户端ID
+    client_id: "mqtt_tester"              # 对应 config.client_id
+    
+    # 认证信息
+    authentication:
+      username: "Admin"                   # 对应 config.username
+      password: "123456"                  # 对应 config.password
+      
+    # 消息和连接设置
+    settings:
+      # 保活间隔 (秒)
+      keepalive_interval_sec: 30          # 对应 config.keepalive_interval
+      # 默认 QoS (Quality of Service) 等级
+      default_qos: 1                      # 对应 config.qos
+      # 默认保留消息标志 (Retain flag)
+      default_retained: false             # 对应 config.retained (0为false)
+      # 连接和操作的通用设置
+      enable_auto_reconnect: true  # 对应 config.enable_auto_reconnect = 1
+      max_reconnect_attempts: 10    # 对应 config.max_reconnect_attempts = 10 (0为无限)
+      operation_timeout_ms: 5000    # 对应 config.timeout_ms = 5000
+      
+    # 主题配置
+    topics:
+      # 发布主题
+      publish_topic: "device/echo"        # 对应 config.pub_topic
+      # 订阅主题
+      subscribe_topic: "device/echo"      # 对应 config.sub_topic
+      
+  
