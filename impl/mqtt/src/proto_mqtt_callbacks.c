@@ -302,8 +302,6 @@ void onSendSuccess(void* context, MQTTAsync_successData* response) {
     }
     
     set_operation_status(mqtt_ctx, OP_SUCCESS);
-    printf("[MQTT] Send success!\n");
-    
     // 调用用户回调函数
     if (mqtt_ctx->send_callback) {
         mqtt_ctx->send_callback(&mqtt_ctx->base, PROTO_SUCCESS, mqtt_ctx->send_userdata);

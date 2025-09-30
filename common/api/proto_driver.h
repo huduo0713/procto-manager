@@ -13,7 +13,8 @@ int proto_connect(proto_ctx_t *ctx);
 void proto_disconnect(proto_ctx_t *ctx);
 int proto_read(proto_ctx_t *ctx, proto_request_t *req);
 int proto_write(proto_ctx_t *ctx, proto_request_t *req);
-
+int plc_proto_read(void *req);//类型在协议栈中定义
+int plc_proto_write(void *req);//类型在协议栈中定义
 #ifdef __cplusplus
 }
 #endif

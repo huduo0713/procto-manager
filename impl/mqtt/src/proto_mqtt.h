@@ -169,9 +169,24 @@ int get_current_time_ms(void);                                          // 获�
 void create_connect_options(MQTTAsync_connectOptions* conn_opts, mqtt_config_t* cfg); // 创建连接选项
 void create_disconnect_options(MQTTAsync_disconnectOptions* disc_opts, int timeout_ms, mqtt_ctx_t* ctx); // 创建断开选项
 
-// =========================================================================
 // 配置加载
 int load_mqtt_config_from_yaml(const char* yaml_path, mqtt_config_t* cfg);
+
+// =========================================================================
+// 数据格式化（对外）
+// =========================================================================
+// 简单类型枚举（与用户侧保持一致: INT32/FLOAT，可扩展）
+typedef enum {
+    ENUM_INT32 = 0,
+    ENUM_FLOAT = 1,
+    ENUM_STRING = 2,
+    ENUM_BOOL = 3
+} TypeData;
+
+// 将一对 key/value 以 JSON 形式追加到 dst。
+// - 成功返回 PROTO_SUCCESS；长度不足返回 PROTO_ERROR_WRITE；参数错误返回 PROTO_ERROR_PARAM
+int mqtt_data_format(const char* key, const void* data_ptr, TypeData type, char* dst);
+
 
 #ifdef __cplusplus
 }

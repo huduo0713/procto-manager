@@ -19,7 +19,7 @@ if (PLT_SOPHON_USE_SOPHON_LIB)
     set(DEPEND_SOPHON_FILE ${ROOT_DIR}/platform/sophon/media/ff_video_decode.cpp)
 endif ()
 add_executable(
-        demo demo/main.cc
+        demo demo/main_plc.cc
 )
 # 定义版本
 target_compile_definitions(demo PRIVATE
