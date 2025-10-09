@@ -10,8 +10,13 @@ include(${ROOT_DIR}/cmake/compile_options.cmake)
 
 # 协议编译
 # 指定依赖
-set(PROTOCOL_LIBS paho-mqtt3c paho-mqtt3a yaml)
+set(PROTOCOL_LIBS ${CMAKE_CURRENT_SOURCE_DIR}/depend/lib/libpaho-mqtt3a.a yaml)
 include(${ROOT_DIR}/cmake/protocol.cmake)
+
+# 强制仅对 paho-mqtt3a 使用静态链接，其余保持动态
+if (UNIX)
+    target_link_options(${CMAKE_PROJECT_NAME} PRIVATE -Wl,-Bstatic -lpaho-mqtt3a -Wl,-Bdynamic)
+endif()
 
 ########################### demo测试文件 ############################
 # 创建 demo 可执行文件
@@ -19,7 +24,7 @@ if (PLT_SOPHON_USE_SOPHON_LIB)
     set(DEPEND_SOPHON_FILE ${ROOT_DIR}/platform/sophon/media/ff_video_decode.cpp)
 endif ()
 add_executable(
-        demo demo/main_plc.cc
+        demo demo/main.cc
 )
 # 定义版本
 target_compile_definitions(demo PRIVATE
