@@ -53,7 +53,8 @@ int plc_proto_read(void *req) {
 
     if (rc != PROTO_SUCCESS) return rc;
 
-    return proto_read(&g_mqtt_ctx, (proto_request_t *)req);
+    // 直接传递 mqtt_read_t 结构体
+    return mqtt_proto_read(&g_mqtt_ctx, (mqtt_read_t *)req);
 }
 
 int plc_proto_write(void *req) {
@@ -65,7 +66,12 @@ int plc_proto_write(void *req) {
 
     if (rc != PROTO_SUCCESS) return rc;
 
-    return proto_write(&g_mqtt_ctx, (proto_request_t *)req);
+    // 直接传递 mqtt_write_t 结构体
+    int result = mqtt_proto_write(&g_mqtt_ctx, (mqtt_write_t *)req);
+    
+    ((mqtt_write_t *)req)->payload[0] = '\0';
+    
+    return result;
 }
 
 

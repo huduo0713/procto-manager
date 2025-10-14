@@ -80,6 +80,18 @@ typedef struct {
     long long timestamp_ms;
 } MQTT_Message;
 
+typedef struct { 
+    char topic[128]; //topic 
+    char payload[1024]; //读写数据缓冲区 
+} mqtt_read_t; 
+
+typedef struct { 
+    char qos; //服务质量等级 
+    char retained; //是否保留 
+    char topic[128]; //topic 
+    char payload[1024]; 
+} mqtt_write_t; 
+
 // 异步回调函数类型定义
 typedef void (*proto_async_callback_t)(proto_ctx_t *ctx, int result, void *userdata);
 
@@ -132,10 +144,10 @@ int proto_connect(proto_ctx_t *ctx);
 void proto_disconnect(proto_ctx_t *ctx);
 
 // 写入MQTT消息
-int proto_write(proto_ctx_t *ctx, proto_request_t *req);
+int mqtt_proto_write(proto_ctx_t *ctx, mqtt_write_t *req);
 
 // 读取MQTT消息
-int proto_read(proto_ctx_t *ctx, proto_request_t *req);
+int mqtt_proto_read(proto_ctx_t *ctx, mqtt_read_t *req);
 
 
 // ============================================================================

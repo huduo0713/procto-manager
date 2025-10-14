@@ -1,4 +1,5 @@
 #include "proto_mqtt.h"
+#include "common/utils/one_logger.hpp"
 
 /**
  * @brief 写入MQTT消息
@@ -14,11 +15,15 @@
  * 5. 设置发送回调以获取发布结果
  * 6. 立即返回，不等待发布完成
  */
-int proto_write(proto_ctx_t *ctx, proto_request_t *req) {
+int mqtt_proto_write(proto_ctx_t *ctx, mqtt_write_t *req) {
     // 参数校验
-    if (!ctx || !req || !req->value || req->quantity == 0) {
+    if (!ctx || !req || !req->payload) {
         return PROTO_ERROR_PARAM;
     }
+    
+    // 调试信息：显示发送的数据
+    log_info("[MQTT] Write - Topic: {}, Payload: {}, QoS: {}, Retained: {}", 
+           req->topic, req->payload, req->qos, req->retained);
     
     mqtt_ctx_t *mqtt_ctx = (mqtt_ctx_t *)ctx->userdata;
     if (!mqtt_ctx) {
@@ -32,10 +37,10 @@ int proto_write(proto_ctx_t *ctx, proto_request_t *req) {
     if (status != CON_OK) {
         if (cfg->enable_auto_reconnect && status == DCON_OK) {
             // 自动重连
-            printf("[MQTT] Auto-reconnecting for write operation...\n");
+            log_info("[MQTT] Auto-reconnecting for write operation...");
             int connect_result = proto_connect(ctx);
             if (connect_result != PROTO_SUCCESS) {
-                printf("[MQTT] Auto-reconnect failed for write operation\n");
+                log_error("[MQTT] Auto-reconnect failed for write operation");
                 return PROTO_ERROR_WRITE;
             }
             // 异步重连已发起。
@@ -50,10 +55,10 @@ int proto_write(proto_ctx_t *ctx, proto_request_t *req) {
     
     // 准备异步消息结构
     MQTTAsync_message msg = MQTTAsync_message_initializer;
-    msg.payload = req->value;                           // 消息内容
-    msg.payloadlen = req->quantity;                     // 消息长度（支持二进制）
-    msg.qos = cfg->qos;                                 // 服务质量等级
-    msg.retained = cfg->retained;                       // 是否保留由配置控制
+    msg.payload = req->payload;                         // 消息内容
+    msg.payloadlen = strlen(req->payload);              // 消息长度
+    msg.qos = req->qos;                                 // 服务质量等级
+    msg.retained = req->retained;                       // 是否保留
 
     // 设置发送回调选项
     MQTTAsync_responseOptions opts = MQTTAsync_responseOptions_initializer;
@@ -62,14 +67,13 @@ int proto_write(proto_ctx_t *ctx, proto_request_t *req) {
     opts.context = mqtt_ctx;                            // 上下文指针
 
     // 异步发布消息（立即返回，不等待完成）
-    int result = MQTTAsync_sendMessage(mqtt_ctx->client, cfg->pub_topic, &msg, &opts);
+    int result = MQTTAsync_sendMessage(mqtt_ctx->client, req->topic, &msg, &opts);
     
     if (result != MQTTASYNC_SUCCESS) {
         set_operation_status(mqtt_ctx, OP_FAILED);
-        printf("[MQTT] Send failed: %s\n", MQTTAsync_strerror(result));
+        log_error("[MQTT] Send failed: {}", MQTTAsync_strerror(result));
         return PROTO_ERROR_WRITE;
     }
-
     set_operation_status(mqtt_ctx, OP_PENDING);
     return PROTO_SUCCESS;
 }
@@ -88,9 +92,9 @@ int proto_write(proto_ctx_t *ctx, proto_request_t *req) {
  * 5. 安全复制消息内容
  * 6. 更新缓冲区指针和计数
  */
-int proto_read(proto_ctx_t *ctx, proto_request_t *req) {
+int mqtt_proto_read(proto_ctx_t *ctx, mqtt_read_t *req) {
     // 参数校验
-    if (!ctx || !req || !req->value || req->quantity == 0) {
+    if (!ctx || !req || !req->payload) {
         return PROTO_ERROR_PARAM;
     }
 
@@ -106,10 +110,10 @@ int proto_read(proto_ctx_t *ctx, proto_request_t *req) {
     if (status != CON_OK) {
         if (cfg->enable_auto_reconnect && status == DCON_OK) {
             // 自动重连：发起连接请求
-            printf("[MQTT] Auto-reconnecting for read operation...\n");
+            log_info("[MQTT] Auto-reconnecting for read operation...");
             int connect_result = proto_connect(ctx);
             if (connect_result != PROTO_SUCCESS) {
-                printf("[MQTT] Auto-reconnect failed for read operation\n");
+                log_error("[MQTT] Auto-reconnect failed for read operation");
                 return PROTO_ERROR_READ;
             }
             // 异步重连已发起，不阻塞等待。读取返回无数据。
@@ -135,10 +139,18 @@ int proto_read(proto_ctx_t *ctx, proto_request_t *req) {
     // 从缓冲区读取消息
     MQTT_Message *msg = &mqtt_ctx->msg_buffer[mqtt_ctx->msg_buffer_head];
     
-    // 使用payloadlen而不是strlen，支持二进制数据
-    size_t copy_len = (msg->payloadlen < req->quantity) ? msg->payloadlen : req->quantity;
-    memcpy(req->value, msg->payload, copy_len);
-    req->quantity = copy_len;
+    // 复制消息内容到 mqtt_read_t 结构体
+    size_t copy_len = (msg->payloadlen < sizeof(req->payload)) ? msg->payloadlen : sizeof(req->payload) - 1;
+    memcpy(req->payload, msg->payload, copy_len);
+    req->payload[copy_len] = '\0';  // 确保字符串终止
+    
+    // 复制主题
+    strncpy(req->topic, msg->topic, sizeof(req->topic) - 1);
+    req->topic[sizeof(req->topic) - 1] = '\0';
+    
+    // 调试信息：显示接收的数据
+    log_info("[MQTT] Read - Topic: {}, Payload: {}, Length: {}", 
+           req->topic, req->payload, copy_len);
     
     // 更新缓冲区指针
     mqtt_ctx->msg_buffer_head = (mqtt_ctx->msg_buffer_head + 1) % MAX_MSG_BUFFER_SIZE;
@@ -169,7 +181,7 @@ int proto_driver_init(proto_ctx_t *ctx) {
     const char* yaml_path = "/usr/runtime/protocol/mqtt/config.yaml";
     int yaml_ret = load_mqtt_config_from_yaml(yaml_path, cfg);
     if (yaml_ret != 0) {
-        printf("[MQTT] Failed to load config from YAML: %d\n", yaml_ret);
+        log_error("[MQTT] Failed to load config from YAML: {}", yaml_ret);
         free(cfg);
         return PROTO_ERROR_PARAM;
     }
@@ -231,7 +243,7 @@ int proto_driver_init(proto_ctx_t *ctx) {
         pthread_mutex_destroy(&mqtt_ctx->state_mutex);
         pthread_cond_destroy(&mqtt_ctx->conn_cond);
         free(mqtt_ctx);
-        printf("[MQTT] Create failed: %s\n", MQTTAsync_strerror(rc));
+        log_error("[MQTT] Create failed: {}", MQTTAsync_strerror(rc));
         return PROTO_ERROR_PARAM;
     }
     
@@ -244,7 +256,7 @@ int proto_driver_init(proto_ctx_t *ctx) {
     // 更新原始上下文
     *ctx = mqtt_ctx->base;
     
-    printf("[MQTT] Client initialized successfully\n");
+    log_info("[MQTT] Client initialized successfully");
     return PROTO_SUCCESS;
 }
 
@@ -261,9 +273,8 @@ void proto_driver_release(proto_ctx_t *ctx) {
     if (!mqtt_ctx) {
         return;
     }
-    
-    printf("[MQTT] Releasing client resources...\n");
-    
+    log_info("[MQTT] Releasing client resources...");
+
     // 先断开连接，再销毁客户端
     if (mqtt_ctx->client) {
         // 如果还连接着，先断开
@@ -293,8 +304,8 @@ void proto_driver_release(proto_ctx_t *ctx) {
         free(ctx->config);
         ctx->config = NULL;
     }
-    
-    printf("[MQTT] Client resources released successfully\n");
+
+    log_info("[MQTT] Client resources released successfully");
 }
 
 /**
@@ -342,7 +353,7 @@ int proto_connect(proto_ctx_t *ctx) {
                 int rc = MQTTAsync_connect(mqtt_ctx->client, &conn_opts);
                 if (rc != MQTTASYNC_SUCCESS) {
                     set_operation_status(mqtt_ctx, OP_FAILED);
-                    printf("[MQTT] Connect failed: %s\n", MQTTAsync_strerror(rc));
+                    log_error("[MQTT] Connect failed: {}", MQTTAsync_strerror(rc));
                     return PROTO_ERROR_CONNECT;
                 }
 
@@ -384,7 +395,7 @@ void proto_disconnect(proto_ctx_t *ctx) {
                 int rc = MQTTAsync_disconnect(mqtt_ctx->client, &disc_opts);
                 if (rc != MQTTASYNC_SUCCESS) {
                     set_operation_status(mqtt_ctx, OP_FAILED);
-                    printf("[MQTT] Disconnect failed: %s\n", MQTTAsync_strerror(rc));
+                    log_error("[MQTT] Disconnect failed: {}", MQTTAsync_strerror(rc));
                     return;
                 }
 

@@ -31,10 +31,6 @@ protocols:
     settings:
       # 保活间隔 (秒)
       keepalive_interval_sec: 30          # 对应 config.keepalive_interval
-      # 默认 QoS (Quality of Service) 等级
-      default_qos: 1                      # 对应 config.qos
-      # 默认保留消息标志 (Retain flag)
-      default_retained: false             # 对应 config.retained (0为false)
       # 连接和操作的通用设置
       enable_auto_reconnect: true  # 对应 config.enable_auto_reconnect = 1
       max_reconnect_attempts: 10    # 对应 config.max_reconnect_attempts = 10 (0为无限)

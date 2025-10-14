@@ -24,6 +24,17 @@ file(GLOB SRC_FILES
         src/*.c
 )
 
+# 对依赖 C++ 头文件的 C 源做特殊处理
+set(_maybe_cpp_sources
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/proto_mqtt_core.c
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/proto_mqtt_callbacks.c
+)
+foreach(_src ${_maybe_cpp_sources})
+    if (EXISTS ${_src})
+        set_source_files_properties(${_src} PROPERTIES LANGUAGE CXX)
+    endif ()
+endforeach()
+
 # 库文件链接目录
 link_directories(
     ${PROTOCOL_LIBRARY_DIR}

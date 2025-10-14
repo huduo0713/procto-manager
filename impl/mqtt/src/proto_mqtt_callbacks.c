@@ -1,4 +1,5 @@
 #include "proto_mqtt.h"
+#include "common/utils/one_logger.hpp"
 
 /**
  * @brief 连接丢失回调函数
@@ -12,15 +13,15 @@
 void onConnectionLost(void* context, char* cause) {
     mqtt_ctx_t* mqtt_ctx = (mqtt_ctx_t*)context;
     if (!mqtt_ctx) {
-        printf("[MQTT] Connection lost but context is NULL\n");
+        log_error("[MQTT] Connection lost but context is NULL");
         return;
     }
     
     // 只有在连接状态为正常或连接中时才处理连接丢失
     if (get_connect_status(mqtt_ctx) == CON_OK || get_connect_status(mqtt_ctx) == CON_PENDING) {
         set_connect_status(mqtt_ctx, DCON_OK);  // 更新为断开状态
-        printf("[MQTT] Connection lost. Cause: %s\n", (cause != NULL) ? cause : "Unknown");
-        
+        log_error("[MQTT] Connection lost. Cause: {}", (cause != NULL) ? cause : "Unknown");
+
         // 灵活重连机制：支持有限次数重连和无限重连
         mqtt_config_t* cfg = (mqtt_config_t*)mqtt_ctx->base.config;
         if (cfg && cfg->enable_auto_reconnect) {
@@ -31,17 +32,17 @@ void onConnectionLost(void* context, char* cause) {
                 // 无限重连模式
                 should_reconnect = 1;
                 mqtt_ctx->reconnect_attempts++;
-                printf("[AutoReconnect] Attempting immediate reconnection (attempt %d, infinite mode)\n", 
-                       mqtt_ctx->reconnect_attempts);
+                log_info("[AutoReconnect] Attempting immediate reconnection (attempt {}, infinite mode)", 
+                         mqtt_ctx->reconnect_attempts);
             } else if (mqtt_ctx->reconnect_attempts < cfg->max_reconnect_attempts) {
                 // 有限次数重连模式
                 should_reconnect = 1;
                 mqtt_ctx->reconnect_attempts++;
-                printf("[AutoReconnect] Attempting immediate reconnection (attempt %d/%d)\n", 
+                log_info("[AutoReconnect] Attempting immediate reconnection (attempt {}/{})\n", 
                        mqtt_ctx->reconnect_attempts, cfg->max_reconnect_attempts);
             } else {
                 // 已达到最大重连次数
-                printf("[AutoReconnect] Max reconnection attempts (%d) reached\n", cfg->max_reconnect_attempts);
+                log_error("[AutoReconnect] Max reconnection attempts ({}) reached\n", cfg->max_reconnect_attempts);
             }
             
             if (should_reconnect) {
@@ -53,9 +54,9 @@ void onConnectionLost(void* context, char* cause) {
                 // 发起异步重连
                 int result = MQTTAsync_connect(mqtt_ctx->client, &conn_opts);
                 if (result == MQTTASYNC_SUCCESS) {
-                    printf("[AutoReconnect] Reconnection request sent successfully!\n");
+                    log_info("[AutoReconnect] Reconnection request sent successfully!");
                 } else {
-                    printf("[AutoReconnect] Reconnection request failed: %s\n", MQTTAsync_strerror(result));
+                    log_error("[AutoReconnect] Reconnection request failed: {}", MQTTAsync_strerror(result));
                 }
             }
         }
@@ -79,14 +80,11 @@ void onConnectionLost(void* context, char* cause) {
 int messageArrived(void *context, char *topicName, int topicLen, MQTTAsync_message *message) {
     mqtt_ctx_t* mqtt_ctx = (mqtt_ctx_t*)context;
     if (!mqtt_ctx) {
-        printf("[MQTT] Warning: context is NULL, discarding message\n");
+        log_warn("[MQTT] Warning: context is NULL, discarding message");
         MQTTAsync_freeMessage(&message);
         MQTTAsync_free(topicName);
         return 1;
     }
-    
-    printf("[MQTT] Message arrived on topic: %.*s, payloadlen: %d\n", 
-           topicLen, topicName, (int)message->payloadlen);
     
     pthread_mutex_lock(&mqtt_ctx->msg_mutex);
     
@@ -94,7 +92,7 @@ int messageArrived(void *context, char *topicName, int topicLen, MQTTAsync_messa
     if (mqtt_ctx->msg_buffer_count >= MAX_MSG_BUFFER_SIZE) {
         mqtt_ctx->msg_buffer_head = (mqtt_ctx->msg_buffer_head + 1) % MAX_MSG_BUFFER_SIZE;
         mqtt_ctx->msg_buffer_count--;
-        printf("[MQTT] Message buffer full. Discard oldest message.\n");
+        log_warn("[MQTT] Message buffer full. Discard oldest message.");
     }
     
     // 存储消息到环形缓冲区尾部
@@ -147,7 +145,7 @@ int messageArrived(void *context, char *topicName, int topicLen, MQTTAsync_messa
 void onConnectSuccess(void* context, MQTTAsync_successData* response) {
     mqtt_ctx_t* mqtt_ctx = (mqtt_ctx_t*)context;
     if (!mqtt_ctx) {
-        printf("[MQTT] Connect success but context is NULL\n");
+        log_error("[MQTT] Connect success but context is NULL");
         return;
     }
     
@@ -155,11 +153,11 @@ void onConnectSuccess(void* context, MQTTAsync_successData* response) {
     if (get_connect_status(mqtt_ctx) != CON_OK) {
         set_connect_status(mqtt_ctx, CON_OK);  // 更新为连接成功状态
         set_operation_status(mqtt_ctx, OP_SUCCESS);
-        printf("[MQTT] Connect success!\n");
+        log_info("[MQTT] Connect success!");
         
         // 重置重连相关状态
         mqtt_ctx->reconnect_attempts = 0;      // 重置重连计数
-        printf("[AutoReconnect] Reconnection successful!\n");
+        log_info("[AutoReconnect] Reconnection successful!");
         
         // 连接成功后自动订阅topic
         mqtt_config_t* cfg = (mqtt_config_t*)mqtt_ctx->base.config;
@@ -170,11 +168,6 @@ void onConnectSuccess(void* context, MQTTAsync_successData* response) {
             sub_opts.context = mqtt_ctx;
             
             int rc = MQTTAsync_subscribe(mqtt_ctx->client, cfg->sub_topic, cfg->qos, &sub_opts);
-            if (rc == MQTTASYNC_SUCCESS) {
-                printf("[MQTT] Subscribe request sent for topic: %s\n", cfg->sub_topic);
-            } else {
-                printf("[MQTT] Subscribe failed for topic: %s, error: %s\n", cfg->sub_topic, MQTTAsync_strerror(rc));
-            }
         }
     }
     
@@ -198,7 +191,7 @@ void onConnectSuccess(void* context, MQTTAsync_successData* response) {
 void onConnectFailure(void* context, MQTTAsync_failureData* response) {
     mqtt_ctx_t* mqtt_ctx = (mqtt_ctx_t*)context;
     if (!mqtt_ctx) {
-        printf("[MQTT] Connect failed but context is NULL\n");
+        log_error("[MQTT] Connect failed but context is NULL");
         return;
     }
     
@@ -207,10 +200,10 @@ void onConnectFailure(void* context, MQTTAsync_failureData* response) {
     
     // 记录详细的失败信息
     if (response != NULL) {
-        printf("[MQTT] Connect failed. Reason Code: %d, Message: %s\n", 
-               response->code, response->message);
+        log_error("[MQTT] Connect failed. Reason Code: {}, Message: {}", 
+                  response->code, response->message);
     } else {
-        printf("[MQTT] Connect failed. Unknown reason\n");
+        log_error("[MQTT] Connect failed. Unknown reason");
     }
     
     // 调用用户回调函数
@@ -232,7 +225,7 @@ void onConnectFailure(void* context, MQTTAsync_failureData* response) {
 void onDisconnectSuccess(void* context, MQTTAsync_successData* response) {
     mqtt_ctx_t* mqtt_ctx = (mqtt_ctx_t*)context;
     if (!mqtt_ctx) {
-        printf("[MQTT] Disconnect success but context is NULL\n");
+        log_error("[MQTT] Disconnect success but context is NULL");
         return;
     }
     
@@ -240,7 +233,7 @@ void onDisconnectSuccess(void* context, MQTTAsync_successData* response) {
     if (get_connect_status(mqtt_ctx) == CON_OK || get_connect_status(mqtt_ctx) == DCON_PENDING) {
         set_connect_status(mqtt_ctx, DCON_OK);  // 更新为断开状态
         set_operation_status(mqtt_ctx, OP_SUCCESS);
-        printf("[MQTT] Disconnect success (active)\n");
+        log_info("[MQTT] Disconnect success (active)");
     }
     
     // 调用用户回调函数
@@ -263,7 +256,7 @@ void onDisconnectSuccess(void* context, MQTTAsync_successData* response) {
 void onDisconnectFailure(void* context, MQTTAsync_failureData* response) {
     mqtt_ctx_t* mqtt_ctx = (mqtt_ctx_t*)context;
     if (!mqtt_ctx) {
-        printf("[MQTT] Disconnect failed but context is NULL\n");
+        log_error("[MQTT] Disconnect failed but context is NULL");
         return;
     }
     
@@ -272,10 +265,10 @@ void onDisconnectFailure(void* context, MQTTAsync_failureData* response) {
     
     // 记录详细的失败信息
     if (response != NULL) {
-        printf("[MQTT] Disconnect failed (active). Reason Code: %d, Message: %s\n",
-               response->code, response->message);
+        log_error("[MQTT] Disconnect failed (active). Reason Code: {}, Message: {}", 
+                  response->code, response->message);
     } else {
-        printf("[MQTT] Disconnect failed (active). Unknown reason\n");
+        log_error("[MQTT] Disconnect failed (active). Unknown reason");
     }
     
     // 调用用户回调函数
@@ -297,7 +290,7 @@ void onDisconnectFailure(void* context, MQTTAsync_failureData* response) {
 void onSendSuccess(void* context, MQTTAsync_successData* response) {
     mqtt_ctx_t* mqtt_ctx = (mqtt_ctx_t*)context;
     if (!mqtt_ctx) {
-        printf("[MQTT] Send success but context is NULL\n");
+        log_error("[MQTT] Send success but context is NULL");
         return;
     }
     
@@ -322,7 +315,7 @@ void onSendSuccess(void* context, MQTTAsync_successData* response) {
 void onSendFailure(void* context, MQTTAsync_failureData* response) {
     mqtt_ctx_t* mqtt_ctx = (mqtt_ctx_t*)context;
     if (!mqtt_ctx) {
-        printf("[MQTT] Send failed but context is NULL\n");
+        log_error("[MQTT] Send failed but context is NULL");
         return;
     }
     
@@ -330,10 +323,10 @@ void onSendFailure(void* context, MQTTAsync_failureData* response) {
     
     // 记录详细的失败信息
     if (response != NULL) {
-        printf("[MQTT] Send failed. Reason Code: %d, Message: %s\n", 
-               response->code, response->message);
+        log_error("[MQTT] Send failed. Reason Code: {}, Message: {}", 
+                  response->code, response->message? response->message : "Unknown");
     } else {
-        printf("[MQTT] Send failed. Unknown reason\n");
+        log_error("[MQTT] Send failed. Unknown reason");
     }
     
     // 调用用户回调函数
@@ -354,11 +347,11 @@ void onSendFailure(void* context, MQTTAsync_failureData* response) {
 void onSubscribeSuccess(void* context, MQTTAsync_successData* response) {
     mqtt_ctx_t* mqtt_ctx = (mqtt_ctx_t*)context;
     if (!mqtt_ctx) {
-        printf("[MQTT] Subscribe success but context is NULL\n");
+        log_error("[MQTT] Subscribe success but context is NULL");
         return;
     }
-    
-    printf("[MQTT] Subscribe success!\n");
+
+    log_info("[MQTT] Subscribe success!");
 }
 
 /**
@@ -373,15 +366,15 @@ void onSubscribeSuccess(void* context, MQTTAsync_successData* response) {
 void onSubscribeFailure(void* context, MQTTAsync_failureData* response) {
     mqtt_ctx_t* mqtt_ctx = (mqtt_ctx_t*)context;
     if (!mqtt_ctx) {
-        printf("[MQTT] Subscribe failed but context is NULL\n");
+        log_error("[MQTT] Subscribe failed but context is NULL");
         return;
     }
     
     // 记录详细的失败信息
     if (response != NULL) {
-        printf("[MQTT] Subscribe failed. Reason Code: %d, Message: %s\n", 
-               response->code, response->message);
+        log_error("[MQTT] Subscribe failed. Reason Code: {}, Message: {}", 
+               response->code, response->message? response->message : "Unknown");
     } else {
-        printf("[MQTT] Subscribe failed. Unknown reason\n");
+        log_error("[MQTT] Subscribe failed. Unknown reason");
     }
 }

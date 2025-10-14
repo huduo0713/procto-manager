@@ -54,7 +54,7 @@ public:
     // 获取单例实例
     static spdlog::logger* getInstance() {
         static std::once_flag initFlag;
-        // 使用局部静态变量实现打到哪里模式，避免在类外初始化静态成员变量
+        // 使用局部静态变量实现打到哪里模式，避免在类外初始化静态成员变量(类外初始化必须放在cpp中不够优雅)
         static std::shared_ptr<spdlog::logger> logger_;
         std::call_once(initFlag, []() {
             // 创建控制台输出和文件输出的日志器
@@ -62,12 +62,13 @@ public:
 
             // 彩色输出到控制台
             auto console_sink = std::make_shared<spdlog::sinks::stdout_color_sink_mt>();
-            console_sink->set_level(spdlog::level::info);
+            console_sink->set_level(spdlog::level::debug);
+        console_sink->set_pattern("[%Y-%m-%d %H:%M:%S.%e][%^%l%$][%t][%s:%#] %v");
             sinks.push_back(console_sink);
 
             // 输出到文件
-            // 每个日志文件最大 5MB，最多保留 5 个日志文件
-            auto file_sink = std::make_shared<spdlog::sinks::rotating_file_sink_mt>("log/app.log", 1024*1024*5, 5);
+            // 每个日志文件最大 20MB，最多保留 10 个日志文件
+            auto file_sink = std::make_shared<spdlog::sinks::rotating_file_sink_mt>("log/app.log", 1024*1024*20, 10);
             file_sink->set_level(spdlog::level::debug);
             sinks.push_back(file_sink);
 
@@ -81,7 +82,7 @@ public:
 
             spdlog::register_logger(logger_);
             // 设置日志的格式，包含时间戳、日志级别、线程ID、文件名、行号和消息
-            logger_->set_pattern("[%Y-%m-%d %H:%M:%S.%e][%l][%t][%s:%#] %v");
+            logger_->set_pattern("[%Y-%m-%d %H:%M:%S.%e][%^%l%$][%t][%s:%#] %v");
             logger_->set_level(spdlog::level::debug); // 设置全局日志级别
             logger_->flush_on(spdlog::level::warn);   // 重要日志立即刷新到磁盘
         });
@@ -100,10 +101,10 @@ private:
 
 //// 定义简化的日志宏
 #define one_logger OneLogger::getInstance()
-#define log_debug(...)    one_logger->log(spdlog::source_loc{__FILE__, __LINE__, __func__}, spdlog::level::debug, __VA_ARGS__)
 #define log_info(...)    one_logger->log(spdlog::source_loc{__FILE__, __LINE__, __func__}, spdlog::level::info, __VA_ARGS__)
 #define log_error(...)   one_logger->log(spdlog::source_loc{__FILE__, __LINE__, __func__}, spdlog::level::err,  __VA_ARGS__)
 #define log_warn(...)    one_logger->log(spdlog::source_loc{__FILE__, __LINE__, __func__}, spdlog::level::warn, __VA_ARGS__)
+#define log_debug(...)   one_logger->log(spdlog::source_loc{__FILE__, __LINE__, __func__}, spdlog::level::debug, __VA_ARGS__)
 
 #define LOG_DEBUG(...)    one_logger->log(spdlog::source_loc{__FILE__, __LINE__, __func__}, spdlog::level::debug, __VA_ARGS__)
 #define LOG_INFO(...)    one_logger->log(spdlog::source_loc{__FILE__, __LINE__, __func__}, spdlog::level::info, __VA_ARGS__)
