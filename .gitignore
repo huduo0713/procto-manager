@@ -5,6 +5,5 @@ cmake-build-debug/
 *.bmodel
 *.Identifier
 *.jpg
-*.vscode
 build
 log

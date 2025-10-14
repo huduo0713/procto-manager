@@ -102,7 +102,7 @@ install_project() {
 if [ $# -eq 0 ]; then
     echo_yellow "No argument provided, defaulting to Debug mode, and deploy..."
     build_project Debug
-    deploy_project
+  #  deploy_project
     exit 0
 fi
 

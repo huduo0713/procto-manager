@@ -22,8 +22,10 @@ int mqtt_proto_write(proto_ctx_t *ctx, mqtt_write_t *req) {
     }
     
     // 调试信息：显示发送的数据
-    log_info("[MQTT] Write - Topic: {}, Payload: {}, QoS: {}, Retained: {}", 
-           req->topic, req->payload, req->qos, req->retained);
+    log_info("[MQTT] Write - Topic: {}, Payload: {}, QoS: {}, Retained: {}",
+         req->topic, req->payload,
+         static_cast<int>(req->qos),
+         static_cast<int>(req->retained));
     
     mqtt_ctx_t *mqtt_ctx = (mqtt_ctx_t *)ctx->userdata;
     if (!mqtt_ctx) {

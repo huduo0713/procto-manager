@@ -1,4 +1,5 @@
 #include "common/api/proto_driver.h"
+// #include "common/utils/one_logger.hpp"
 #include "proto_mqtt.h"
 #include <pthread.h>
 
@@ -58,6 +59,8 @@ int plc_proto_read(void *req) {
 }
 
 int plc_proto_write(void *req) {
+    // log_debug("the pointer of req is {}", (void*)req);
+    // log_debug("the pointer of payload is {}", (void*)((mqtt_write_t *)req)->payload);
     if (!req) return PROTO_ERROR_PARAM;
 
     pthread_mutex_lock(&g_ctx_mutex);
@@ -69,6 +72,7 @@ int plc_proto_write(void *req) {
     // 直接传递 mqtt_write_t 结构体
     int result = mqtt_proto_write(&g_mqtt_ctx, (mqtt_write_t *)req);
     
+    // 清空
     ((mqtt_write_t *)req)->payload[0] = '\0';
     
     return result;

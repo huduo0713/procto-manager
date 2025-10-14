@@ -28,6 +28,7 @@ file(GLOB SRC_FILES
 set(_maybe_cpp_sources
         ${CMAKE_CURRENT_SOURCE_DIR}/src/proto_mqtt_core.c
         ${CMAKE_CURRENT_SOURCE_DIR}/src/proto_mqtt_callbacks.c
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/plc_mqtt_entry.c
 )
 foreach(_src ${_maybe_cpp_sources})
     if (EXISTS ${_src})
