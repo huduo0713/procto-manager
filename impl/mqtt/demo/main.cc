@@ -17,6 +17,10 @@ static void signal_handler(int sig) {
     if (sig == SIGINT || sig == SIGTERM) {
         log_info("收到中断信号，正在退出...");
         g_running = 0;
+        
+        // 停止热配置监控
+        extern void hot_config_stop(void);
+        hot_config_stop();
     }
 }
 
@@ -34,7 +38,7 @@ int main() {
         (void)arg;
         int message_count = 0;
         while (g_running) {
-            mqtt_write_t write_req = {1, 0, "device/echo1111", ""};
+            mqtt_write_t write_req = {1, 0, "device/echo1", ""};
             float temp = 10.2f + (message_count % 10);
             int mode = message_count % 4;
             int rc1 = mqtt_data_format("temp", &temp, ENUM_FLOAT, write_req.payload);
@@ -63,13 +67,12 @@ int main() {
         while (g_running) {
             mqtt_read_t read_req = {};
             memset(read_req.payload, 0, sizeof(read_req.payload));
-            strncpy(read_req.topic, "device/echo", sizeof(read_req.topic) - 1);
+            strncpy(read_req.topic, "device/echo1", sizeof(read_req.topic) - 1);
             int read_result = plc_proto_read((void*)&read_req);
             if (read_result == PROTO_SUCCESS) {
                 std::string received_message(read_req.payload);
                 log_info("收到消息: {}", received_message);
             } else {
-                // NO_DATA 等非致命情况无需打印过多日志
                 usleep(200 * 1000); // 200ms 轮询间隔
             }
         }

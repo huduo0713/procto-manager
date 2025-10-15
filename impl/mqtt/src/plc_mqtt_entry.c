@@ -1,5 +1,5 @@
 #include "common/api/proto_driver.h"
-// #include "common/utils/one_logger.hpp"
+#include "common/utils/one_logger.hpp"
 #include "proto_mqtt.h"
 #include <pthread.h>
 
@@ -14,6 +14,42 @@ static proto_ctx_t g_mqtt_ctx = {
 static int g_inited = 0;
 static pthread_mutex_t g_ctx_mutex = PTHREAD_MUTEX_INITIALIZER;
 
+// 前向声明
+static int ensure_init_and_connect(void);
+
+// 配置变化回调函数
+static void on_config_changed(void) {
+    log_info("[HotConfig] Configuration changed, reloading...\n");
+    
+    pthread_mutex_lock(&g_ctx_mutex);
+    
+    // 断开当前连接
+    if (g_inited) {
+        log_info("[HotConfig] Disconnecting current session...\n");
+        proto_driver_release(&g_mqtt_ctx);
+        g_inited = 0;
+    }
+    
+    // 重新初始化并连接
+    log_info("[HotConfig] Reinitializing with new config...\n");
+    int rc = proto_driver_init(&g_mqtt_ctx);
+    if (rc == PROTO_SUCCESS) {
+        g_inited = 1;
+        
+        // 尝试连接
+        rc = proto_connect(&g_mqtt_ctx);
+        if (rc == PROTO_SUCCESS) {
+            log_info("[HotConfig] Successfully reloaded and connected with new configuration\n");
+        } else {
+            log_info("[HotConfig] Configuration reloaded but connection failed: \n", rc);
+        }
+    } else {
+        log_info("[HotConfig] Failed to reload configuration: \n", rc);
+    }
+    
+    pthread_mutex_unlock(&g_ctx_mutex);
+}
+
 // 确保已初始化并按需连接
 static int ensure_init_and_connect(void) {
     int rc = PROTO_SUCCESS;
@@ -24,6 +60,12 @@ static int ensure_init_and_connect(void) {
             return rc;
         }
         g_inited = 1;
+        
+        // 启动热配置监控（只在第一次初始化时启动）
+        if (!hot_config_is_running()) {
+            const char* config_path = "/usr/runtime/protocol/mqtt/config.yaml";
+            hot_config_init(config_path, on_config_changed, NULL);
+        }
     }
 
     // 如果有 MQTT 上下文，依据状态机检查连接
@@ -43,6 +85,8 @@ static int ensure_init_and_connect(void) {
 
     return PROTO_SUCCESS;
 }
+
+
 
 int plc_proto_read(void *req) {
     if (!req) return PROTO_ERROR_PARAM;
@@ -181,4 +225,6 @@ int mqtt_data_format(const char* key, const void* data_ptr, TypeData type, char*
 
     return PROTO_SUCCESS;
 }
+
+// 注意：热配置监控会在程序退出时自动清理，无需手动调用
 

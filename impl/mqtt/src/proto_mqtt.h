@@ -89,7 +89,7 @@ typedef struct {
     char qos; //服务质量等级 
     char retained; //是否保留 
     char topic[128]; //topic 
-    char payload[1024]; 
+    char payload[1024]; //读写数据缓冲区
 } mqtt_write_t; 
 
 // 异步回调函数类型定义
@@ -199,6 +199,12 @@ typedef enum {
 // - 成功返回 PROTO_SUCCESS；长度不足返回 PROTO_ERROR_WRITE；参数错误返回 PROTO_ERROR_PARAM
 int mqtt_data_format(const char* key, const void* data_ptr, TypeData type, char* dst);
 
+int hot_config_init(const char *config_path, 
+    void (*on_changed)(void),
+    void *userdata);
+void hot_config_cleanup(void);
+int hot_config_is_running(void);
+void hot_config_stop(void);
 
 #ifdef __cplusplus
 }
