@@ -142,27 +142,6 @@ void handle_write_property_ack(BACNET_ADDRESS *src, uint8_t invoke_id)
     // 对于并发操作，我们直接处理ACK，不依赖active_operation
     log_info("[BACnet] WriteProperty successful (invoke_id: {})", invoke_id);
 
-    // 推入写队列反馈（可选，便于上层轮询写结果）
-    {
-        std::lock_guard<std::mutex> lock(context->write_queue_mutex);
-        size_t next_tail = (context->write_tail + 1) % BacnetContext::kWriteQueueSize;
-        if (context->write_count < BacnetContext::kWriteQueueSize) {
-            auto &item = context->write_queue[context->write_tail];
-            // 写反馈中我们无法确定具体的设备/对象信息，使用默认值
-            item.device_instance = 0; // 需要从TSM或其他地方获取
-            item.object_type = 0;
-            item.object_instance = 0;
-            item.property_id = 0;
-            // 写反馈无需value
-            item.priority = 0;
-            item.timestamp = std::chrono::steady_clock::now();
-            context->write_tail = next_tail;
-            context->write_count++;
-        } else {
-            log_warn("[BACnet] Write queue full, discarding write ack (invoke_id: {})", invoke_id);
-        }
-    }
-
     // 释放TSM资源
     if (invoke_id != 0) {
         tsm_free_invoke_id(invoke_id);

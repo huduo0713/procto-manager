@@ -27,7 +27,8 @@ int main() {
         .property_id = 85,            // PROP_PRESENT_VALUE = 85
         .array_index = -1,            // 不使用数组索引
         .timeout_ms = 6000,           // 6秒超时
-        .value = nullptr              // 稍后分配
+        .value = nullptr,             // 稍后分配
+        .check_only = false           // 默认发送请求
     };
 
     // 分配值缓冲区
@@ -56,14 +57,19 @@ int main() {
         printf("📡 读取请求已发送，等待设备响应...\n");
 
         // 轮询等待结果（最多等待10次，每次1秒）
+        // 注意：不要在等待期间再次调用 plc_proto_read，这会导致发送重复请求
         bool got_result = false;
         for (int attempt = 0; attempt < 10; ++attempt) {
             printf("  等待中... (%d/10)\n", attempt + 1);
             std::this_thread::sleep_for(std::chrono::seconds(1));
 
-            // 再次尝试读取队列
-            result = plc_proto_read(&read_req);
-            if (result == PROTO_SUCCESS) {
+            // 检查读取队列是否有数据（使用相同的请求结构体）
+            bacnet_read_t check_req = read_req;  // 复制请求
+            check_req.check_only = true;  // 仅检查队列，不发送新请求
+            int check_result = plc_proto_read(&check_req);
+            if (check_result == PROTO_SUCCESS) {
+                // 复制结果到原始请求
+                *read_req.value = *check_req.value;
                 printf("✅ 读取成功: ");
                 if (read_req.value->type == BACNET_DATA_REAL) {
                     printf("浮点值 = %.2f\n", read_req.value->value.real_value);
@@ -74,10 +80,10 @@ int main() {
                 }
                 got_result = true;
                 break;
-            } else if (result == PROTO_NO_DATA) { // PROTO_NO_DATA
+            } else if (check_result == PROTO_NO_DATA) { // PROTO_NO_DATA
                 continue; // 继续等待
             } else {
-                printf("❌ 读取失败: 错误码 %d\n", result);
+                printf("❌ 读取失败: 错误码 %d\n", check_result);
                 break;
             }
         }
@@ -146,17 +152,42 @@ int main() {
         }
     } else if (result == PROTO_NO_DATA) {
         printf("📡 验证读取请求已发送，等待响应...\n");
-        std::this_thread::sleep_for(std::chrono::seconds(3));
+        
+        // 等待验证结果（等待更短时间，因为写入刚刚完成）
+        bool got_result = false;
+        for (int attempt = 0; attempt < 5; ++attempt) {
+            std::this_thread::sleep_for(std::chrono::seconds(1));
 
-        result = plc_proto_read(&read_req);
-        if (result == PROTO_SUCCESS) {
-            printf("✅ 验证读取成功: ");
-            if (read_req.value->type == BACNET_DATA_REAL) {
-                printf("浮点值 = %.2f\n", read_req.value->value.real_value);
+            // 检查读取队列是否有数据
+            bacnet_read_t check_req = read_req;  // 复制请求
+            check_req.check_only = true;  // 仅检查队列，不发送新请求
+            int check_result = plc_proto_read(&check_req);
+            if (check_result == PROTO_SUCCESS) {
+                // 复制结果到原始请求
+                *read_req.value = *check_req.value;
+                printf("✅ 验证读取成功: ");
+                if (read_req.value->type == BACNET_DATA_REAL) {
+                    printf("浮点值 = %.2f\n", read_req.value->value.real_value);
+                    if (fabs(read_req.value->value.real_value - 25.5f) < 0.01f) {
+                        printf("🎉 写入验证成功！值已正确更新\n");
+                    } else {
+                        printf("⚠️  写入可能未生效，期望值: 25.5, 实际值: %.2f\n",
+                               read_req.value->value.real_value);
+                    }
+                } else {
+                    printf("其他类型 (type=%d)\n", read_req.value->type);
+                }
+                got_result = true;
+                break;
+            } else if (check_result == PROTO_NO_DATA) {
+                continue; // 继续等待
             } else {
-                printf("其他类型 (type=%d)\n", read_req.value->type);
+                printf("❌ 验证读取失败: 错误码 %d\n", check_result);
+                break;
             }
-        } else {
+        }
+
+        if (!got_result) {
             printf("❌ 验证读取失败\n");
         }
     } else {

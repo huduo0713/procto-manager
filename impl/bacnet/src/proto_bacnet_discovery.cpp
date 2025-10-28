@@ -101,16 +101,11 @@ void worker_loop_function(BacnetContext *context)
         // 处理写队列中的请求
         {
             std::unique_lock<std::mutex> lock(context->write_queue_mutex);
-            // 等待写队列有数据或者停止信号
-            context->write_queue_cv.wait(lock, [context]() {
+            // 等待写队列有数据或者停止信号，最多等待100ms
+            context->write_queue_cv.wait_for(lock, std::chrono::milliseconds(100), [context]() {
                 return context->worker_stop.load(std::memory_order_acquire) || 
                        context->write_count > 0;
             });
-
-            // 如果是停止信号，退出
-            if (context->worker_stop.load(std::memory_order_acquire)) {
-                break;
-            }
 
             // 处理写队列中的所有请求
             while (context->write_count > 0) {

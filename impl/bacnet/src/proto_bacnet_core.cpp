@@ -577,6 +577,12 @@ int plc_proto_read(void *req)
         }
     }
 
+    // 如果仅检查队列，返回无数据
+    if (read_req->check_only) {
+        log_debug("[PLC] Check only mode, no data in queue");
+        return -7; // PROTO_NO_DATA
+    }
+
     // 队列无数据，发起底层读请求，立即返回无数据
     log_debug("[PLC] No data in queue, initiating read request");
     rc = bacnet_proto_read(&g_plc_ctx, read_req);

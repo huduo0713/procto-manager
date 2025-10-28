@@ -108,6 +108,7 @@ typedef struct {
     int32_t             array_index;       /* 属性数组索引，-1 表示未使用 */
     uint32_t            timeout_ms;        /* 操作超时 */
     bacnet_data_value_t *value;            /* 输出值缓冲区 */
+    bool                check_only;        /* 是否仅检查队列而不发送新请求 */
 } bacnet_read_t;
 
 typedef struct {
