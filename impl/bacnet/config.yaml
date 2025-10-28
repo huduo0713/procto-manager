@@ -1,0 +1,42 @@
+# config.yaml
+
+# ==================================
+# 通用配置 (Common Configuration)
+# ----------------------------------
+common:
+  environment: "development"    # 运行环境标识 (development / staging / production)
+  log_level: "debug"            # 日志等级 (debug / info / warn / error)
+  log_file: "bacnet.log"        # 日志文件路径
+
+# ==================================
+# 协议配置 (Protocols Configuration)
+# ----------------------------------
+protocols:
+
+  # --- BACnet 协议配置块 ---
+  bacnet:
+    enabled: true                 # 是否启用 BACnet 协议栈
+
+    # 设备发现与目标设备配置
+    discovery:
+      target_device_start: 5678   # 目标设备实例范围起始
+      target_device_end: 5678     # 目标设备实例范围结束
+      whois_retry: 3              # Who-Is 重试次数
+      response_timeout_ms: 5000   # 等待 I-Am 响应超时时间
+
+    # 本地设备信息 (如需固定本地实例号或最大 APDU 大小，可在此调整)
+    local_device:
+      instance_id: 4194303        # 本地设备实例 ID (默认使用允许的最大值)
+      max_apdu: 1476              # 本地支持的最大 APDU 长度 (常见 BACnet/IP 默认值)
+
+    # 网络相关参数
+    network:
+      interface: ""               # 使用的网络接口 (留空则使用默认配置)
+      port: 47808                 # BACnet/IP UDP 端口 (默认 47808)
+      broadcast_address: "255.255.255.255"  # 广播地址，用于 Who-Is
+
+    # 服务行为配置
+    services:
+      read_timeout_ms: 6000       # 读取操作等待确认的超时时间
+      write_timeout_ms: 6000      # 写入操作等待确认的超时时间
+      default_priority: 8         # 写属性时使用的默认优先级 (1-16, 0 表示不指定)

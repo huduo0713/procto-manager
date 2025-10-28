@@ -1,0 +1,70 @@
+{
+  // 使用 gdb 调试生成在 build/ 下的可执行文件（demo）。
+  // 包含两个配置：Debug 模式和 Release 模式。
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "C/C++: g++ build and debug active file",
+      "type": "cppdbg",
+      "request": "launch",
+  "program": "${fileDirname}/../build/demo",
+      "args": [],
+      "stopAtEntry": false,
+  "cwd": "${fileDirname}/..",
+      "environment": [],
+      "externalConsole": false,
+      "MIMode": "gdb",
+      "miDebuggerPath": "/usr/bin/gdb",
+      "preLaunchTask": "build (Debug)",
+      "setupCommands": [
+        {
+          "description": "Enable pretty-printing for gdb",
+          "text": "-enable-pretty-printing",
+          "ignoreFailures": true
+        }
+      ]
+    },
+    {
+      "name": "Debug demo (Debug)",
+      "type": "cppdbg",
+      "request": "launch",
+  "program": "${fileDirname}/../build/demo",
+      "args": [],
+      "stopAtEntry": false,
+  "cwd": "${fileDirname}/..",
+      "environment": [],
+      "externalConsole": false,
+      "MIMode": "gdb",
+      "miDebuggerPath": "/usr/bin/gdb",
+      "preLaunchTask": "build (Debug)",
+      "setupCommands": [
+        {
+          "description": "Enable pretty-printing for gdb",
+          "text": "-enable-pretty-printing",
+          "ignoreFailures": true
+        }
+      ]
+    },
+    {
+      "name": "Debug demo (Release)",
+      "type": "cppdbg",
+      "request": "launch",
+  "program": "${fileDirname}/../build/demo",
+      "args": [],
+      "stopAtEntry": false,
+  "cwd": "${fileDirname}/..",
+      "environment": [],
+      "externalConsole": false,
+      "MIMode": "gdb",
+      "miDebuggerPath": "/usr/bin/gdb",
+      "preLaunchTask": "build (Release)",
+      "setupCommands": [
+        {
+          "description": "Enable pretty-printing for gdb",
+          "text": "-enable-pretty-printing",
+          "ignoreFailures": true
+        }
+      ]
+    }
+  ]
+}

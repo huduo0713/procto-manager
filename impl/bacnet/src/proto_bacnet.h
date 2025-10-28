@@ -1,18 +1,234 @@
 #pragma once
 #include "common/api/proto_common.h"
-
+#include <stdbool.h>
+#include <stdint.h>
+#include <stddef.h>
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-// --- BACnet 配置结构体 ---
-// 用于定义我们要通信的目标设备
+/* -------------------------------------------------------------------------- */
+/* 常量定义                                                                   */
+/* -------------------------------------------------------------------------- */
+
+#define BACNET_MAX_ENV_LEN            16
+#define BACNET_MAX_LOG_LEVEL_LEN      16
+#define BACNET_MAX_LOG_PATH_LEN       128
+#define BACNET_MAX_INTERFACE_LEN      32
+#define BACNET_MAX_ADDRESS_LEN        48
+
+/* -------------------------------------------------------------------------- */
+/* 配置数据结构                                                               */
+/* -------------------------------------------------------------------------- */
+
 typedef struct {
-    uint32_t target_device_id; // 目标设备的实例ID
-    // 注意：BACnet/IP 通常是无连接的，IP地址可以通过 Who-Is 动态发现。
-    // 如果需要直接点对点通信，可以额外增加一个 char* target_ip_address;
+    char environment[BACNET_MAX_ENV_LEN];
+    char log_level[BACNET_MAX_LOG_LEVEL_LEN];
+    char log_file[BACNET_MAX_LOG_PATH_LEN];
+} bacnet_common_settings_t;
+
+typedef struct {
+    uint32_t target_device_start;       /* 目标设备实例范围起始 (含) */
+    uint32_t target_device_end;         /* 目标设备实例范围结束 (含) */
+    uint8_t  whois_retry;               /* Who-Is 重试次数 */
+    uint32_t response_timeout_ms;       /* 等待 I-Am 回应的超时 */
+} bacnet_discovery_config_t;
+
+typedef struct {
+    uint32_t instance_id;               /* 本地设备实例 ID */
+    uint16_t max_apdu;                  /* 本地支持的最大 APDU 长度 */
+} bacnet_local_device_config_t;
+
+typedef struct {
+    char     interface_name[BACNET_MAX_INTERFACE_LEN]; /* 指定网络接口 */
+    uint16_t port;                                     /* UDP 端口 (默认 47808) */
+    char     broadcast_address[BACNET_MAX_ADDRESS_LEN];/* 广播地址 */
+} bacnet_network_config_t;
+
+typedef struct {
+    uint32_t read_timeout_ms;           /* ReadProperty 操作超时 */
+    uint32_t write_timeout_ms;          /* WriteProperty 操作超时 */
+    uint8_t  default_priority;          /* WriteProperty 默认优先级 (0 表示未指定) */
+} bacnet_service_config_t;
+
+typedef struct {
+    bool                         enabled;      /* 是否启用 BACnet 协议栈 */
+    bacnet_discovery_config_t    discovery;    /* 设备发现配置 */
+    bacnet_local_device_config_t local_device; /* 本地设备参数 */
+    bacnet_network_config_t      network;      /* 网络层配置 */
+    bacnet_service_config_t      services;     /* 服务行为配置 */
+} bacnet_protocol_config_t;
+
+typedef struct {
+    bacnet_common_settings_t common;  /* 通用配置 */
+    bacnet_protocol_config_t bacnet;  /* BACnet 协议配置 */
 } bacnet_config_t;
 
+/* -------------------------------------------------------------------------- */
+/* 事件定义                                                                   */
+/* -------------------------------------------------------------------------- */
+
+typedef enum {
+    BACNET_DATA_NULL = 0,
+    BACNET_DATA_BOOLEAN,
+    BACNET_DATA_UNSIGNED,
+    BACNET_DATA_SIGNED,
+    BACNET_DATA_REAL,
+    BACNET_DATA_DOUBLE,
+    BACNET_DATA_ENUM,
+    BACNET_DATA_OCTET_STRING,
+    BACNET_DATA_CHARACTER_STRING
+} bacnet_data_type_t;
+
+typedef struct {
+    bacnet_data_type_t type;
+    union {
+        bool        boolean_value;
+        uint32_t    unsigned_value;
+        int32_t     signed_value;
+        float       real_value;
+        double      double_value;
+        uint32_t    enum_value;
+        struct {
+            uint8_t *data;
+            size_t   length;
+        } octet_string;
+        struct {
+            char   *data;
+            size_t length;
+        } character_string;
+    } value;
+} bacnet_data_value_t;
+
+typedef struct {
+    uint32_t            device_instance;   /* 目标设备实例 */
+    uint16_t            object_type;       /* 对象类型 */
+    uint32_t            object_instance;   /* 对象实例 */
+    uint32_t            property_id;       /* 属性 ID */
+    int32_t             array_index;       /* 属性数组索引，-1 表示未使用 */
+    uint32_t            timeout_ms;        /* 操作超时 */
+    bacnet_data_value_t *value;            /* 输出值缓冲区 */
+} bacnet_read_t;
+
+typedef struct {
+    uint32_t           device_instance;
+    uint16_t           object_type;
+    uint32_t           object_instance;
+    uint32_t           property_id;
+    int32_t            array_index;
+    uint8_t            priority;           /* 写入优先级，0 表示使用默认 */
+    uint32_t           timeout_ms;
+    bacnet_data_value_t value;             /* 写入值 */
+} bacnet_write_t;
+
+/* -------------------------------------------------------------------------- */
+/* 状态机定义                                                                 */
+/* -------------------------------------------------------------------------- */
+
+typedef enum {
+    BACNET_CONN_IDLE = 0,        /* 尚未建立连接 */
+    BACNET_CONN_CONNECTING,      /* 正在建立连接 */
+    BACNET_CONN_CONNECTED,       /* 已成功连接 */
+    BACNET_CONN_DISCONNECTING,   /* 正在断开连接 */
+    BACNET_CONN_DISCONNECTED     /* 已断开 */
+} bacnet_connection_state_t;
+
+typedef enum {
+    BACNET_OP_IDLE = 0,          /* 空闲，无活动操作 */
+    BACNET_OP_PENDING,            /* 有操作正在进行 */
+    BACNET_OP_SUCCESS,            /* 最后一次操作成功 */
+    BACNET_OP_FAILED              /* 最后一次操作失败 */
+} bacnet_operation_state_t;
+
+/* -------------------------------------------------------------------------- */
+/* C 接口函数声明                                                             */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * @brief 从 YAML 配置文件加载 BACnet 设置
+ * @param yaml_path 配置文件路径
+ * @param cfg 输出配置结构体指针
+ * @return 0 成功，其余为错误码
+ */
+int bacnet_load_config_from_yaml(const char *yaml_path, bacnet_config_t *cfg);
+
+/* -------------------------------------------------------------------------- */
+/* 对外暴露的 C 接口（PLC 层使用）- 异步非阻塞                                 */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * @brief PLC 读取接口（异步非阻塞）
+ * @param req 读请求指针 (bacnet_read_t*)
+ * @return PROTO_SUCCESS 请求已提交，其他值为错误码
+ * 
+ * 功能：
+ * 1. 自动检查连接状态（未连接则自动连接）
+ * 2. 提交异步读取请求
+ * 3. 立即返回（不等待结果）
+ * 4. 结果通过队列异步返回
+ * 
+ * 使用方式：
+ *   int ret = plc_proto_read(&req);
+ *   if (ret == PROTO_SUCCESS) {
+ *       // 请求已提交，数据将通过队列返回
+ *   }
+ */
+int plc_proto_read(void *req);
+
+/**
+ * @brief PLC 写入接口（异步非阻塞）
+ * @param req 写请求指针 (bacnet_write_t*)
+ * @return PROTO_SUCCESS 请求已提交，其他值为错误码
+ * 
+ * 功能：
+ * 1. 自动检查连接状态（未连接则自动连接）
+ * 2. 提交异步写入请求
+ * 3. 立即返回（不等待结果）
+ * 4. 结果通过队列异步反馈
+ * 
+ * 使用方式：
+ *   int ret = plc_proto_write(&req);
+ *   if (ret == PROTO_SUCCESS) {
+ *       // 请求已提交，写入将异步完成
+ *   }
+ */
+int plc_proto_write(void *req);
+
+/* -------------------------------------------------------------------------- */
+/* 内部使用接口（不建议外部直接调用，仅供测试和调试）                          */
+/* -------------------------------------------------------------------------- */
+
+// 内部驱动接口（由 plc_proto_read/write 自动调用）
+int  proto_driver_init(proto_ctx_t *ctx);
+void proto_driver_release(proto_ctx_t *ctx);
+int  proto_connect(proto_ctx_t *ctx);
+void proto_disconnect(proto_ctx_t *ctx);
+
+// 内部读写接口（由 plc_proto_read/write 自动调用）
+int bacnet_proto_read(proto_ctx_t *ctx, bacnet_read_t *req);
+int bacnet_proto_write(proto_ctx_t *ctx, const bacnet_write_t *req);
+
+/* -------------------------------------------------------------------------- */
+/* 热配置管理接口（通过信号触发，不使用监控线程）                             */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * @brief 触发配置重载（通过信号调用）
+ * @return PROTO_SUCCESS 成功，其他值为错误码
+ * 
+ * 说明：
+ * 1. 由外部信号处理函数调用（如 SIGUSR1）
+ * 2. 重新加载配置文件
+ * 3. 重新初始化驱动
+ * 4. 不使用额外的监控线程
+ */
+int bacnet_reload_config(void);
+
+/**
+ * @brief 释放 bacnet_data_value_t 中动态分配的内存
+ * @param value 要释放内存的 bacnet_data_value_t 结构体指针
+ */
+void bacnet_data_value_free(bacnet_data_value_t *value);
 
 #ifdef __cplusplus
 }

@@ -1,0 +1,21 @@
+{
+  "configurations": [
+    {
+      "name": "Linux",
+      "includePath": [
+        "${workspaceFolder}/**",
+        "${workspaceFolder}/impl",
+        "${workspaceFolder}/common",
+        "${workspaceFolder}/3rdparty/spdlog/include",
+        "${workspaceFolder}/3rdparty/open62541/include",
+        "${workspaceFolder}/3rdparty/open62541/lib/src_generated"
+      ],
+      "defines": [],
+      "compilerPath": "/usr/bin/g++",
+      "cStandard": "c11",
+      "cppStandard": "c++17",
+      "intelliSenseMode": "linux-gcc-x64"
+    }
+  ],
+  "version": 4
+}

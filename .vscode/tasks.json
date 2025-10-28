@@ -1,0 +1,67 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "build (Debug)",
+      "type": "shell",
+      "command": "bash",
+      "args": [
+        "-lc",
+        "source \"${workspaceFolder}/script/env_script.sh\" && TARGET_DIR=\"${fileDirname}\" && if [ -z \"$TARGET_DIR\" ]; then TARGET_DIR=\"${workspaceFolder}/impl/mqtt\"; fi && cd \"$TARGET_DIR/..\" && build.sh debug"
+      ],
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      },
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared"
+      },
+      "problemMatcher": ["$gcc"]
+    },
+    {
+      "label": "build (Release)",
+      "type": "shell",
+      "command": "bash",
+      "args": [
+        "-lc",
+        "source \"${workspaceFolder}/script/env_script.sh\" && TARGET_DIR=\"${fileDirname}\" && if [ -z \"$TARGET_DIR\" ]; then TARGET_DIR=\"${workspaceFolder}/impl/mqtt\"; fi && cd \"$TARGET_DIR/..\" && build.sh release"
+      ],
+      "group": "build",
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared"
+      },
+      "problemMatcher": ["$gcc"]
+    },
+    {
+      "label": "clean build dir",
+      "type": "shell",
+      "command": "bash",
+      "args": [
+        "-lc",
+        "source \"${workspaceFolder}/script/env_script.sh\" && TARGET_DIR=\"${fileDirname}\" && if [ -z \"$TARGET_DIR\" ]; then TARGET_DIR=\"${workspaceFolder}/impl/mqtt\"; fi && cd \"$TARGET_DIR/..\" && build.sh clean"
+      ],
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared"
+      }
+    },
+    {
+      "label": "C/C++: g++ build active file",
+      "type": "shell",
+      "command": "bash",
+      "args": [
+        "-lc",
+        "source \"${workspaceFolder}/script/env_script.sh\" && TARGET_DIR=\"${fileDirname}\" && if [ -z \"$TARGET_DIR\" ]; then TARGET_DIR=\"${workspaceFolder}/impl/mqtt\"; fi && cd \"$TARGET_DIR/..\" && build.sh debug"
+      ],
+      "group": "build",
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared"
+      },
+      "problemMatcher": ["$gcc"],
+      "detail": "替换默认的 C/C++ 构建任务，调用仓库自带的 build.sh"
+    }
+  ]
+}

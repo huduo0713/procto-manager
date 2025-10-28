@@ -1,90 +1,91 @@
-#include <pthread.h>
 #include <iostream>
+#include <string>
 #include <cstring>
 #include <unistd.h>
+#include <signal.h>
+#include <pthread.h>
 #include "common/api/proto_common.h"
 #include "common/api/proto_driver.h"
-#include "proto_mqtt.h"
+#include "impl/mqtt/src/proto_mqtt.h"
+#include "common/utils/one_logger.hpp"
 
-void* writer_thread(void* arg) {
-    proto_ctx_t* ctx = (proto_ctx_t*)arg;
-    proto_request_t req = {};
-    strncpy(req.resource_name, "HoldingReg", sizeof(req.resource_name) - 1);
+// 全局变量用于信号处理
+static int g_running = 1;
 
-    char msg[64];
-    for (int i = 0; i < 5; ++i) {
-        snprintf(msg, sizeof(msg), "Hello %d", i);
-        req.value = msg;
-
-        if (proto_write(ctx, &req) == PROTO_SUCCESS) {
-            std::cout << "[Writer] Message sent." << std::endl;
-        } else {
-            std::cerr << "[Writer] Failed to send." << std::endl;
-        }
-        sleep(1);
+// 信号处理函数
+static void signal_handler(int sig) {
+    if (sig == SIGINT || sig == SIGTERM) {
+        log_info("收到中断信号，正在退出...");
+        g_running = 0;
+        
+        // 停止热配置监控
+        extern void hot_config_stop(void);
+        hot_config_stop();
     }
-    return nullptr;
-}
-
-void* reader_thread(void* arg) {
-    proto_ctx_t* ctx = (proto_ctx_t*)arg;
-    proto_request_t req = {};
-    req.value = malloc(128);  // 简单分配一块缓冲
-    req.quantity = 128;
-
-    for (int i = 0; i < 10; ++i) {
-        memset(req.value, 0, 128);
-        if (proto_read(ctx, &req) == PROTO_SUCCESS) {
-            std::cout << "[Reader] Received: " << (char*)req.value << std::endl;
-        } else {
-            std::cerr << "[Reader] Failed to read." << std::endl;
-        }
-        sleep(1);
-    }
-    free(req.value);
-    return nullptr;
 }
 
 int main() {
-    mqtt_config_t config = {};
-    strncpy(config.broker, "tcp://1.92.111.153:1883", sizeof(config.broker) - 1);
-    strncpy(config.client_id, "client_test_mqtt", sizeof(config.client_id) - 1);
-    strncpy(config.username, "Admin", sizeof(config.username) - 1);
-    strncpy(config.password, "123456", sizeof(config.password) - 1);
-    strncpy(config.pub_topic, "device/echo", sizeof(config.pub_topic) - 1);
-    strncpy(config.sub_topic, "device/echo", sizeof(config.sub_topic) - 1);  // 订阅同一 topic
-    config.timeout_ms = 3000;
+    // 设置信号处理
+    signal(SIGINT, signal_handler);
+    signal(SIGTERM, signal_handler);
 
-    proto_ctx_t ctx = {};
-    ctx.type = PROTO_TYPE_MQTT;
-    ctx.client = nullptr;
-    ctx.config = &config;
-    ctx.userdata = nullptr;
+    log_info("=== MQTT协议测试程序（plc封装） ===");
+    log_info("开始读写线程...");
 
-    if (proto_driver_init(&ctx) != PROTO_SUCCESS) {
-        std::cerr << "MQTT init failed" << std::endl;
-        return -1;
-    }
+    // 创建发送线程
+    pthread_t tx_thread;
+    pthread_create(&tx_thread, NULL, [](void* arg)->void* {
+        (void)arg;
+        int message_count = 0;
+        while (g_running) {
+            mqtt_write_t write_req = {1, 0, "device/echo1", ""};
+            float temp = 10.2f + (message_count % 10);
+            int mode = message_count % 4;
+            int rc1 = mqtt_data_format("temp", &temp, ENUM_FLOAT, write_req.payload);
+            int rc2 = mqtt_data_format("mode", &mode, ENUM_INT32, write_req.payload);
+            if (rc1 != PROTO_SUCCESS || rc2 != PROTO_SUCCESS) {
+                log_error("拼接mode失败, code={}", rc2);
+                sleep(1);
+                continue;
+            }
+            log_info("发送JSON: {}", write_req.payload);
+            int write_result = plc_proto_write((void*)&write_req);
+            if (write_result != PROTO_SUCCESS) {
+                log_error("发送失败, code={}", write_result);
+            }
 
-    if (proto_connect(&ctx) != PROTO_SUCCESS) {
-        std::cerr << "MQTT connect failed" << std::endl;
-        proto_driver_release(&ctx);
-        return -1;
-    }
+            message_count++;
+            sleep(1);
+        }
+        return NULL;
+    }, NULL);
 
-    std::cout << "MQTT connected successfully" << std::endl;
-    sleep(1);
+    // 创建接收线程
+    pthread_t rx_thread;
+    pthread_create(&rx_thread, NULL, [](void* arg)->void* {
+        (void)arg;
+        while (g_running) {
+            mqtt_read_t read_req = {};
+            memset(read_req.payload, 0, sizeof(read_req.payload));
+            strncpy(read_req.topic, "device/echo1", sizeof(read_req.topic) - 1);
+            int read_result = plc_proto_read((void*)&read_req);
+            if (read_result == PROTO_SUCCESS) {
+                std::string received_message(read_req.payload);
+                log_info("收到消息: {}", received_message);
+            } else {
+                usleep(200 * 1000); // 200ms 轮询间隔
+            }
+        }
+        return NULL;
+    }, NULL);
 
-    pthread_t writer, reader;
-    pthread_create(&writer, nullptr, writer_thread, &ctx);
-    pthread_create(&reader, nullptr, reader_thread, &ctx);
+    // 等待退出
+    pthread_join(tx_thread, NULL);
+    pthread_join(rx_thread, NULL);
 
-    pthread_join(writer, nullptr);
-    pthread_join(reader, nullptr);
-
-    proto_disconnect(&ctx);
-    proto_driver_release(&ctx);
-
-    std::cout << "Program completed" << std::endl;
+    // plc 封装内部持有的上下文会在进程结束时回收，如需显式释放可在此处扩展
+    log_info("程序结束");
     return 0;
 }
+
+

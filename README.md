@@ -13,7 +13,7 @@ git pull --recurse-submodules
 
 ```angular2html
 cd {PROJECT_DIR}/
-source script/env_setup.bash
+source script/env_setup.sh
 
 # 参数说明
 
