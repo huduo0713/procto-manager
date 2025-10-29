@@ -535,6 +535,11 @@ int bacnet_poll_event(bacnet_event_t *event, uint32_t timeout_ms)
                     }
                     context->read_count--;
                     
+                    // 如果队列变空，重置read_tail
+                    if (context->read_count == 0) {
+                        context->read_tail = context->read_head;
+                    }
+                    
                     return PROTO_SUCCESS;
                 }
             }
@@ -607,6 +612,11 @@ int bacnet_poll_event(bacnet_event_t *event, uint32_t timeout_ms)
                             context->read_queue[dst_idx] = context->read_queue[src_idx];
                         }
                         context->read_count--;
+                        
+                        // 如果队列变空，重置read_tail
+                        if (context->read_count == 0) {
+                            context->read_tail = context->read_head;
+                        }
                         
                         return PROTO_SUCCESS;
                     }

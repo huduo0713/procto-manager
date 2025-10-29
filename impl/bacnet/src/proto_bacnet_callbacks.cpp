@@ -76,8 +76,15 @@ void handle_read_property_ack(uint8_t *service_request, uint16_t service_len,
             size_t idx = (context->read_head + i) % BacnetContext::kReadQueueSize;
             auto &item = context->read_queue[idx];
             
-            if (item.invoke_id == service_data->invoke_id && !item.is_completed) {
-                log_debug("[BACnet] Found queue item by invoke_id: {}", service_data->invoke_id);
+            log_debug("[BACnet] Checking queue item {}: invoke_id={}, device={}, object={}/{}, completed={}", 
+                     i, item.invoke_id, item.device_instance, item.object_type, item.object_instance, item.is_completed);
+            
+            if (item.invoke_id == service_data->invoke_id) {
+                if (item.is_completed) {
+                    log_debug("[BACnet] Queue item {} already completed, skipping", i);
+                    continue;
+                }
+                log_debug("[BACnet] Found matching queue item by invoke_id: {} (expected: {})", item.invoke_id, service_data->invoke_id);
                 found_item = true;
                 
                 // 解码并更新数据
@@ -113,17 +120,21 @@ void handle_read_property_ack(uint8_t *service_request, uint16_t service_len,
         
         // 如果通过invoke_id没找到，尝试通过设备+对象匹配（兼容旧逻辑）
         if (!found_item) {
-            log_debug("[BACnet] invoke_id match failed, trying device+object match for invoke_id: {}", service_data->invoke_id);
+            log_debug("[BACnet] invoke_id match failed for {}, trying device+object match (device: {}, object: {}/{})", 
+                     service_data->invoke_id, device_id, data.object_type, data.object_instance);
             for (size_t i = 0; i < context->read_count; ++i) {
                 size_t idx = (context->read_head + i) % BacnetContext::kReadQueueSize;
                 auto &item = context->read_queue[idx];
+                
+                log_debug("[BACnet] Checking fallback item {}: invoke_id={}, device={}, object={}/{}, completed={}", 
+                         i, item.invoke_id, item.device_instance, item.object_type, item.object_instance, item.is_completed);
                 
                 if (item.device_instance == device_id && 
                     item.object_type == data.object_type && 
                     item.object_instance == data.object_instance && 
                     !item.is_completed) {
-                    log_warn("[BACnet] Using fallback device+object match for invoke_id: {} (device: {}, object: {}/{})", 
-                             service_data->invoke_id, device_id, data.object_type, data.object_instance);
+                    log_warn("[BACnet] Using fallback device+object match for invoke_id: {} (queue invoke_id: {}, device: {}, object: {}/{})", 
+                             service_data->invoke_id, item.invoke_id, device_id, data.object_type, data.object_instance);
                     
                     // 解码并更新数据
                     BACNET_APPLICATION_DATA_VALUE value{};

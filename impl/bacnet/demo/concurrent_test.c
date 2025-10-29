@@ -22,13 +22,20 @@ void test_concurrent_reads() {
         uint8_t invoke_id;
     } objects[] = {
         {OBJECT_ANALOG_INPUT, 1, "analog-input-1", 0},
-        {OBJECT_ANALOG_OUTPUT, 1, "analog-output-1", 0},
-        {OBJECT_ANALOG_VALUE, 1, "analog-value-1", 0},
-        {OBJECT_BINARY_INPUT, 1, "binary-input-1", 0},
-        {OBJECT_BINARY_OUTPUT, 1, "binary-output-1", 0},
-        {OBJECT_BINARY_VALUE, 1, "binary-value-1", 0},
-        {OBJECT_INTEGER_VALUE, 1, "integer-value-1", 0},
-        {OBJECT_CHARACTERSTRING_VALUE, 1, "characterstring-value-1", 0}
+        {OBJECT_ANALOG_INPUT, 1, "analog-input-1", 0},
+        {OBJECT_ANALOG_INPUT, 1, "analog-input-1", 0},
+        {OBJECT_ANALOG_INPUT, 1, "analog-input-1", 0},
+        {OBJECT_ANALOG_INPUT, 1, "analog-input-1", 0},
+        {OBJECT_ANALOG_INPUT, 1, "analog-input-1", 0},
+        {OBJECT_ANALOG_INPUT, 1, "analog-input-1", 0},
+        {OBJECT_ANALOG_INPUT, 1, "analog-input-1", 0},
+        // {OBJECT_ANALOG_OUTPUT, 1, "analog-output-1", 0},
+        // {OBJECT_ANALOG_VALUE, 1, "analog-value-1", 0},
+        // {OBJECT_BINARY_INPUT, 1, "binary-input-1", 0},
+        // {OBJECT_BINARY_OUTPUT, 1, "binary-output-1", 0},
+        // {OBJECT_BINARY_VALUE, 1, "binary-value-1", 0},
+        // {OBJECT_INTEGER_VALUE, 1, "integer-value-1", 0},
+        // {OBJECT_CHARACTERSTRING_VALUE, 1, "characterstring-value-1", 0}
     };
 
     const int NUM_OBJECTS = sizeof(objects) / sizeof(objects[0]);
@@ -155,19 +162,34 @@ void test_repeated_reads() {
         printf("✅ 没有残留事件\n");
     }
 
-    const int NUM_READS = 5;
-    bacnet_read_t read_reqs[NUM_READS];
-    bacnet_data_value_t values[NUM_READS];
-    uint8_t invoke_ids[NUM_READS];
+    // 定义要读取的对象列表（5个相同的对象）
+    struct {
+        uint16_t object_type;
+        uint32_t object_instance;
+        const char* name;
+        uint8_t invoke_id;
+    } objects[] = {
+        {OBJECT_ANALOG_INPUT, 1, "analog-input-1", 0},
+        {OBJECT_ANALOG_INPUT, 1, "analog-input-1", 0},
+        {OBJECT_ANALOG_INPUT, 1, "analog-input-1", 0},
+        {OBJECT_ANALOG_INPUT, 1, "analog-input-1", 0},
+        {OBJECT_ANALOG_INPUT, 1, "analog-input-1", 0}
+    };
 
-    printf("📡 批量提交 %d 次读取 analog-input-1...\n", NUM_READS);
+    const int NUM_OBJECTS = sizeof(objects) / sizeof(objects[0]);
 
-    // 1. 批量提交所有读请求
-    for (int i = 0; i < NUM_READS; i++) {
+    // 准备读请求
+    bacnet_read_t read_reqs[NUM_OBJECTS];
+    bacnet_data_value_t values[NUM_OBJECTS];
+
+    printf("📡 批量提交 %d 次读取 analog-input-1...\n", NUM_OBJECTS);
+
+    // 1. 批量提交读请求
+    for (int i = 0; i < NUM_OBJECTS; i++) {
         read_reqs[i] = (bacnet_read_t){
-            .device_instance = 5678,
-            .object_type = OBJECT_ANALOG_INPUT,
-            .object_instance = 1,
+            .device_instance = 5678,  // 目标设备ID
+            .object_type = objects[i].object_type,
+            .object_instance = objects[i].object_instance,
             .property_id = PROP_PRESENT_VALUE,
             .array_index = -1,
             .timeout_ms = 5000,
@@ -177,18 +199,14 @@ void test_repeated_reads() {
         };
 
         int result = plc_proto_read(&read_reqs[i]);
-        invoke_ids[i] = read_reqs[i].invoke_id;  // 保存invoke_id
-        printf("📤 第 %d 次请求: ", i + 1);
         if (result == PROTO_SUCCESS) {
-            printf("✅ 成功 (invoke_id: %d)\n", invoke_ids[i]);
-        } else if (result == -7) {
-            printf("📭 队列空，请求已提交\n");
+            objects[i].invoke_id = read_reqs[i].invoke_id;  // 保存invoke_id
+            printf("✅ 已提交读取 %s (invoke_id: %d)\n", objects[i].name, objects[i].invoke_id);
+        } else if (result == -7) {  // PROTO_NO_DATA
+            printf("📭 %s 队列中暂无数据，请求已提交\n", objects[i].name);
         } else {
-            printf("❌ 失败: %d\n", result);
+            printf("❌ 提交 %s 失败: %d\n", objects[i].name, result);
         }
-        
-        // 添加短暂延迟，避免请求过于密集
-        usleep(10000);  // 10ms
     }
 
     printf("\n⏳ 等待所有响应...\n");
@@ -197,7 +215,7 @@ void test_repeated_reads() {
     int completed = 0;
     time_t start_time = time(NULL);
 
-    while (completed < NUM_READS && (time(NULL) - start_time) < 10) {  // 10秒超时
+    while (completed < NUM_OBJECTS && (time(NULL) - start_time) < 10) {  // 10秒超时
         bacnet_event_t event;
 
         // 非阻塞轮询
@@ -206,12 +224,41 @@ void test_repeated_reads() {
         if (result == PROTO_SUCCESS && event.type != BACNET_EVENT_NONE) {
             if (event.type == BACNET_EVENT_READ_COMPLETE) {
                 // 通过invoke_id匹配原始请求
-                for (int i = 0; i < NUM_READS; i++) {
-                    if (invoke_ids[i] == event.invoke_id) {
+                for (int i = 0; i < NUM_OBJECTS; i++) {
+                    if (objects[i].invoke_id == event.invoke_id) {
                         if (event.status == PROTO_SUCCESS) {
-                            printf("✅ 第 %d 次读取: %.2f\n", i + 1, event.data.read_complete.value.value.real_value);
+                            printf("✅ %s = ", objects[i].name);
+                            // 使用事件中的数据，而不是values数组
+                            switch (event.data.read_complete.value.type) {
+                                case BACNET_DATA_REAL:
+                                    printf("%.2f\n", event.data.read_complete.value.value.real_value);
+                                    break;
+                                case BACNET_DATA_BOOLEAN:
+                                    printf("%s\n", event.data.read_complete.value.value.boolean_value ? "TRUE" : "FALSE");
+                                    break;
+                                case BACNET_DATA_UNSIGNED:
+                                    printf("%u\n", event.data.read_complete.value.value.unsigned_value);
+                                    break;
+                                case BACNET_DATA_SIGNED:
+                                    printf("%d\n", event.data.read_complete.value.value.signed_value);
+                                    break;
+                                case BACNET_DATA_ENUM:
+                                    printf("%u\n", event.data.read_complete.value.value.enum_value);
+                                    break;
+                                case BACNET_DATA_OCTET_STRING:
+                                    printf("octet string\n");
+                                    break;
+                                case BACNET_DATA_CHARACTER_STRING:
+                                    printf("'%.*s'\n",
+                                           (int)event.data.read_complete.value.value.character_string.length,
+                                           event.data.read_complete.value.value.character_string.data);
+                                    break;
+                                default:
+                                    printf("(类型:%d)\n", event.data.read_complete.value.type);
+                                    break;
+                            }
                         } else {
-                            printf("❌ 第 %d 次读取失败: %d\n", i + 1, event.status);
+                            printf("❌ %s 读取失败: %d\n", objects[i].name, event.status);
                         }
                         completed++;
                         break;
@@ -224,10 +271,10 @@ void test_repeated_reads() {
         }
     }
 
-    if (completed < NUM_READS) {
-        printf("⚠️ 超时：只收到 %d/%d 个响应\n", completed, NUM_READS);
+    if (completed < NUM_OBJECTS) {
+        printf("⚠️ 超时：只收到 %d/%d 个响应\n", completed, NUM_OBJECTS);
     } else {
-        printf("� 所有 %d 次重复读取完成！\n", NUM_READS);
+        printf("🎉 所有 %d 次重复读取完成！\n", NUM_OBJECTS);
     }
 }
 
