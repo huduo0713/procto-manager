@@ -98,45 +98,8 @@ void worker_loop_function(BacnetContext *context)
     time_t last_seconds = time(nullptr);
 
     while (!context->worker_stop.load(std::memory_order_acquire)) {
-        // 处理写队列中的请求
-        {
-            std::unique_lock<std::mutex> lock(context->write_queue_mutex);
-            // 等待写队列有数据或者停止信号，最多等待100ms
-            context->write_queue_cv.wait_for(lock, std::chrono::milliseconds(100), [context]() {
-                return context->worker_stop.load(std::memory_order_acquire) || 
-                       context->write_count > 0;
-            });
-
-            // 处理写队列中的所有请求
-            while (context->write_count > 0) {
-                BacnetContext::WriteBufferItem &item = context->write_queue[context->write_head];
-                
-                // 构造写请求结构体
-                bacnet_write_t write_req{
-                    item.device_instance,
-                    static_cast<uint16_t>(item.object_type),
-                    item.object_instance,
-                    item.property_id,
-                    static_cast<int32_t>(item.array_index),
-                    item.priority,
-                    0, // timeout_ms
-                    item.value
-                };
-                
-                // 直接调用写操作执行函数，避免递归
-                int result = execute_write_property(context, &write_req);
-                
-                // 记录结果到写队列项（可选，用于调试）
-                item.status = static_cast<proto_status_t>(result);
-                
-                // 从队列中移除已处理的项
-                context->write_head = (context->write_head + 1) % BacnetContext::kWriteQueueSize;
-                context->write_count--;
-                
-                log_debug("[BACnet] Processed write request from queue (remaining: {}, result: {})", 
-                         context->write_count, result);
-            }
-        }
+        // 处理写队列（已移除，写操作现在直接执行）
+        // 写操作不需要队列，因为它们是同步的，回调函数直接处理ACK
 
         // 更新定时器 - 使用毫秒级精度
         static auto last_timer_update = std::chrono::steady_clock::now();

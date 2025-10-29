@@ -68,6 +68,32 @@ struct fmt::formatter<proto_status_t> : fmt::formatter<int> {
 
 namespace bacnet {
 
+/* -------------------------------------------------------------------------- */
+/* BACnet地址哈希和比较函数（用于unordered_map）                                     */
+/* -------------------------------------------------------------------------- */
+
+struct BACnetAddressHash {
+    std::size_t operator()(const BACNET_ADDRESS& addr) const {
+        std::size_t h = 0;
+        h = std::hash<uint8_t>()(addr.len);
+        h = h * 31 + std::hash<uint8_t>()(addr.net);
+        for (int i = 0; i < MAX_MAC_LEN && i < addr.len; ++i) {
+            h = h * 31 + std::hash<uint8_t>()(addr.adr[i]);
+        }
+        return h;
+    }
+};
+
+struct BACnetAddressEqual {
+    bool operator()(const BACNET_ADDRESS& a, const BACNET_ADDRESS& b) const {
+        if (a.len != b.len || a.net != b.net) return false;
+        for (int i = 0; i < a.len; ++i) {
+            if (a.adr[i] != b.adr[i]) return false;
+        }
+        return true;
+    }
+};
+
 /* ========================================================================== */
 /* BACnet 协议驱动 - 内部实现（C++）                                          */
 /* ========================================================================== */
@@ -194,6 +220,7 @@ public:
     BacnetContext(BacnetContext&&) noexcept = default;
     BacnetContext& operator=(BacnetContext&&) noexcept = default;
 
+public:
     // 环形缓冲队列定义
     static constexpr size_t kReadQueueSize = 64;
     static constexpr size_t kWriteQueueSize = 64;
@@ -203,7 +230,11 @@ public:
         uint32_t object_instance;
         uint32_t property_id;
         bacnet_data_value_t value;
+        proto_status_t status;
+        bool is_completed;  // 是否已由回调函数完成
         std::chrono::steady_clock::time_point timestamp;
+        bacnet_read_t *original_request;  // 原始请求指针，用于事件关联
+        uint8_t invoke_id;  // BACnet协议的调用ID，用于精确匹配
     };
     struct WriteBufferItem {
         uint32_t device_instance;
@@ -215,7 +246,10 @@ public:
         uint32_t array_index;
         uint32_t length;
         proto_status_t status;
+        bool is_completed;  // 是否已由回调函数完成
         std::chrono::steady_clock::time_point timestamp;
+        bacnet_write_t *original_request;  // 原始请求指针，用于事件关联
+        uint8_t invoke_id;  // BACnet协议的调用ID，用于精确匹配
     };
     // 读缓冲队列
     ReadBufferItem read_queue[kReadQueueSize] = {};
@@ -256,8 +290,11 @@ public:
     std::atomic<bool> worker_running{false};
     std::atomic<bool> worker_stop{false};
 
+    // 设备地址映射
+    std::unordered_map<BACNET_ADDRESS, uint32_t, BACnetAddressHash, BACnetAddressEqual> device_address_to_id;
+
     // 接收缓冲区
-    uint8_t rx_buffer[MAX_MPDU]{};
+    uint8_t rx_buffer[1500]{};
 
     // 热配置
     std::mutex hot_config_mutex;
@@ -311,8 +348,8 @@ void check_and_reconnect_if_needed(BacnetContext *context);
 /* 读写操作函数声明（proto_bacnet_io.cpp）                                    */
 /* -------------------------------------------------------------------------- */
 
-proto_status_t execute_read_property(BacnetContext *context, bacnet_read_t *req);
-proto_status_t execute_write_property(BacnetContext *context, const bacnet_write_t *req);
+proto_status_t execute_read_property(BacnetContext *context, bacnet_read_t *req, uint8_t *invoke_id_out);
+proto_status_t execute_write_property(BacnetContext *context, const bacnet_write_t *req, uint8_t *invoke_id_out);
 BACNET_ADDRESS resolve_target_address(BacnetContext *context, uint32_t device_instance, proto_status_t &status);
 
 /* -------------------------------------------------------------------------- */

@@ -33,6 +33,7 @@ void handle_iam_callback(uint8_t *service_request, uint16_t service_len, BACNET_
 
     // 缓存设备地址
     address_add(device_id, max_apdu, src);
+    context->device_address_to_id[*src] = device_id;
     context->target_found.store(true, std::memory_order_release);
     
     log_info("[BACnet] Target device {} discovered and cached (max_apdu: {}, vendor: {})", 
@@ -54,69 +55,113 @@ void handle_read_property_ack(uint8_t *service_request, uint16_t service_len,
 
     log_debug("[BACnet] ReadProperty Ack received (invoke_id: {})", service_data->invoke_id);
 
-    // 对于并发操作，我们直接处理ACK，不依赖active_operation
-    // BACnet协议栈的TSM会确保invoke_id的正确性
-
-    // 解码ReadProperty响应
-    BACNET_READ_PROPERTY_DATA data;
+    // 解析ReadProperty ACK响应数据
+    BACNET_READ_PROPERTY_DATA data{};
     int len = rp_ack_decode_service_request(service_request, service_len, &data);
     if (len < 0) {
-        log_error("[BACnet] Failed to decode ReadProperty Ack (invoke_id: {})", service_data->invoke_id);
-        // 无法确定具体操作，记录错误但不调用finalize_operation
+        log_error("[BACnet] Failed to decode ReadProperty ACK response");
         return;
     }
 
-    // 提取应用层数据并推入读缓冲队列
-    proto_status_t status = PROTO_ERROR_READ;
-    if (data.application_data && data.application_data_len > 0) {
-        BACNET_APPLICATION_DATA_VALUE value{};
-        int dec_len = bacapp_decode_application_data(
-            data.application_data,
-            static_cast<uint8_t>(data.application_data_len),
-            &value
-        );
-        if (dec_len > 0) {
-            bacnet_data_value_t out_value{};
-            bacnet_read_t temp_req = {}; // 临时请求结构体用于转换
-            temp_req.value = &out_value;
-            status = store_application_value(&temp_req, value);
-            if (status == PROTO_SUCCESS) {
-                // 推入读队列
-                {
-                    std::lock_guard<std::mutex> lock(context->read_queue_mutex);
-                    size_t next_tail = (context->read_tail + 1) % BacnetContext::kReadQueueSize;
-                    if (context->read_count < BacnetContext::kReadQueueSize) {
-                        auto &item = context->read_queue[context->read_tail];
-                        // 从上下文中获取目标设备ID（我们只连接到一个设备）
-                        item.device_instance = context->target_device_start; // 使用配置的目标设备
-                        item.object_type = data.object_type;
-                        item.object_instance = data.object_instance;
-                        item.property_id = data.object_property;
-                        item.value = out_value;  // 复制结构和指针
-                        item.timestamp = std::chrono::steady_clock::now();
-                        context->read_tail = next_tail;
-                        context->read_count++;
+    // 获取设备ID
+    uint32_t device_id = context->device_address_to_id[*src];
+
+    // 通过invoke_id查找对应的读队列项（优先匹配），如果找不到则通过设备+对象匹配
+    bool found_item = false;
+    {
+        std::lock_guard<std::mutex> lock(context->read_queue_mutex);
+        
+        // 首先尝试通过invoke_id精确匹配
+        for (size_t i = 0; i < context->read_count; ++i) {
+            size_t idx = (context->read_head + i) % BacnetContext::kReadQueueSize;
+            auto &item = context->read_queue[idx];
+            
+            if (item.invoke_id == service_data->invoke_id && !item.is_completed) {
+                log_debug("[BACnet] Found queue item by invoke_id: {}", service_data->invoke_id);
+                found_item = true;
+                
+                // 解码并更新数据
+                BACNET_APPLICATION_DATA_VALUE value{};
+                int decoded_len = bacapp_decode_application_data(
+                    data.application_data, data.application_data_len, &value);
+                
+                if (decoded_len > 0) {
+                    bacnet_read_t temp_req = {};
+                    temp_req.value = &item.value;
+                    proto_status_t status = store_application_value(&temp_req, value);
+                    
+                    if (status == PROTO_SUCCESS) {
+                        item.status = PROTO_SUCCESS;
+                        item.is_completed = true;
                         log_info("[BACnet] ReadProperty successful (device: {}, object: {}/{}, property: {}, invoke_id: {})", 
-                                 context->target_device_start, data.object_type, data.object_instance, data.object_property, service_data->invoke_id);
-                        // 注意：内存所有权已转移到队列，out_value不再拥有内存
-                        std::memset(&out_value, 0, sizeof(out_value));
+                                 device_id, data.object_type, data.object_instance, item.property_id, service_data->invoke_id);
                     } else {
-                        log_warn("[BACnet] Read queue full, discarding data (invoke_id: {})", service_data->invoke_id);
-                        // 释放未使用的内存
-                        bacnet_data_value_free(&out_value);
-                        status = PROTO_ERROR_READ;
+                        log_error("[BACnet] Failed to store application value (status: {}, invoke_id: {})", status, service_data->invoke_id);
+                        bacnet_data_value_free(&item.value);
+                        item.status = status;
+                        item.is_completed = true;
                     }
+                } else {
+                    log_error("[BACnet] Failed to decode application data (invoke_id: {})", service_data->invoke_id);
+                    bacnet_data_value_free(&item.value);
+                    item.status = PROTO_ERROR_READ;
+                    item.is_completed = true;
                 }
-            } else {
-                log_error("[BACnet] Failed to store application value (status: {}, invoke_id: {})", status, service_data->invoke_id);
-                // 释放失败时的内存
-                bacnet_data_value_free(&out_value);
+                break;
             }
-        } else {
-            log_error("[BACnet] Failed to decode application data (invoke_id: {})", service_data->invoke_id);
         }
-    } else {
-        log_warn("[BACnet] No application data in ReadProperty Ack (invoke_id: {})", service_data->invoke_id);
+        
+        // 如果通过invoke_id没找到，尝试通过设备+对象匹配（兼容旧逻辑）
+        if (!found_item) {
+            log_debug("[BACnet] invoke_id match failed, trying device+object match for invoke_id: {}", service_data->invoke_id);
+            for (size_t i = 0; i < context->read_count; ++i) {
+                size_t idx = (context->read_head + i) % BacnetContext::kReadQueueSize;
+                auto &item = context->read_queue[idx];
+                
+                if (item.device_instance == device_id && 
+                    item.object_type == data.object_type && 
+                    item.object_instance == data.object_instance && 
+                    !item.is_completed) {
+                    log_warn("[BACnet] Using fallback device+object match for invoke_id: {} (device: {}, object: {}/{})", 
+                             service_data->invoke_id, device_id, data.object_type, data.object_instance);
+                    
+                    // 解码并更新数据
+                    BACNET_APPLICATION_DATA_VALUE value{};
+                    int decoded_len = bacapp_decode_application_data(
+                        data.application_data, data.application_data_len, &value);
+                    
+                    if (decoded_len > 0) {
+                        bacnet_read_t temp_req = {};
+                        temp_req.value = &item.value;
+                        proto_status_t status = store_application_value(&temp_req, value);
+                        
+                        if (status == PROTO_SUCCESS) {
+                            item.status = PROTO_SUCCESS;
+                            item.is_completed = true;
+                            log_info("[BACnet] ReadProperty successful via fallback (device: {}, object: {}/{}, property: {}, invoke_id: {})", 
+                                     device_id, data.object_type, data.object_instance, item.property_id, service_data->invoke_id);
+                            found_item = true;
+                        } else {
+                            log_error("[BACnet] Failed to store application value via fallback (status: {}, invoke_id: {})", status, service_data->invoke_id);
+                            bacnet_data_value_free(&item.value);
+                            item.status = status;
+                            item.is_completed = true;
+                        }
+                    } else {
+                        log_error("[BACnet] Failed to decode application data via fallback (invoke_id: {})", service_data->invoke_id);
+                        bacnet_data_value_free(&item.value);
+                        item.status = PROTO_ERROR_READ;
+                        item.is_completed = true;
+                    }
+                    break;
+                }
+            }
+        }
+    }
+    
+    if (!found_item) {
+        log_warn("[BACnet] No matching read queue item found for invoke_id: {} (device: {}, object: {}/{})", 
+                 service_data->invoke_id, device_id, data.object_type, data.object_instance);
     }
 
     // 释放TSM资源
@@ -139,8 +184,29 @@ void handle_write_property_ack(BACNET_ADDRESS *src, uint8_t invoke_id)
 
     log_debug("[BACnet] WriteProperty Ack received (invoke_id: {})", invoke_id);
 
-    // 对于并发操作，我们直接处理ACK，不依赖active_operation
-    log_info("[BACnet] WriteProperty successful (invoke_id: {})", invoke_id);
+    // 通过invoke_id查找对应的写队列项
+    bool found_item = false;
+    {
+        std::lock_guard<std::mutex> lock(context->write_queue_mutex);
+        for (size_t i = 0; i < context->write_count; ++i) {
+            size_t idx = (context->write_head + i) % BacnetContext::kWriteQueueSize;
+            auto &item = context->write_queue[idx];
+            
+            if (item.invoke_id == invoke_id) {
+                // 找到了对应的队列项，标记为成功
+                item.status = PROTO_SUCCESS;
+                item.is_completed = true;  // 标记为已完成
+                log_info("[BACnet] WriteProperty successful (device: {}, object: {}/{}, property: {}, invoke_id: {})", 
+                         item.device_instance, item.object_type, item.object_instance, item.property_id, invoke_id);
+                found_item = true;
+                break;
+            }
+        }
+    }
+    
+    if (!found_item) {
+        log_warn("[BACnet] No matching write queue item found for invoke_id: {}", invoke_id);
+    }
 
     // 释放TSM资源
     if (invoke_id != 0) {
@@ -165,8 +231,51 @@ void handle_error_response(BACNET_ADDRESS *src, uint8_t invoke_id,
               bactext_error_code_name(error_code),
               invoke_id);
 
-    // 对于并发操作，我们无法确定具体的操作类型
-    // 记录错误并释放TSM资源
+    // 通过invoke_id查找对应的队列项并更新状态
+    bool found_item = false;
+    {
+        // 首先尝试在读队列中查找
+        std::lock_guard<std::mutex> lock_read(context->read_queue_mutex);
+        for (size_t i = 0; i < context->read_count; ++i) {
+            size_t idx = (context->read_head + i) % BacnetContext::kReadQueueSize;
+            auto &item = context->read_queue[idx];
+            
+            if (item.invoke_id == invoke_id) {
+                item.status = PROTO_ERROR_READ;
+                item.is_completed = true;  // 标记为已完成
+                log_error("[BACnet] ReadProperty failed (device: {}, object: {}/{}, property: {}, error: {}, invoke_id: {})", 
+                         item.device_instance, item.object_type, item.object_instance, 
+                         item.property_id, bactext_error_code_name(error_code), invoke_id);
+                found_item = true;
+                break;
+            }
+        }
+    }
+    
+    if (!found_item) {
+        // 如果读队列中没找到，尝试在写队列中查找
+        std::lock_guard<std::mutex> lock_write(context->write_queue_mutex);
+        for (size_t i = 0; i < context->write_count; ++i) {
+            size_t idx = (context->write_head + i) % BacnetContext::kWriteQueueSize;
+            auto &item = context->write_queue[idx];
+            
+            if (item.invoke_id == invoke_id) {
+                item.status = PROTO_ERROR_WRITE;
+                item.is_completed = true;  // 标记为已完成
+                log_error("[BACnet] WriteProperty failed (device: {}, object: {}/{}, property: {}, error: {}, invoke_id: {})", 
+                         item.device_instance, item.object_type, item.object_instance, 
+                         item.property_id, bactext_error_code_name(error_code), invoke_id);
+                found_item = true;
+                break;
+            }
+        }
+    }
+
+    if (!found_item) {
+        log_warn("[BACnet] No matching queue item found for error response (invoke_id: {})", invoke_id);
+    }
+
+    // 释放TSM资源
     if (invoke_id != 0) {
         tsm_free_invoke_id(invoke_id);
     }

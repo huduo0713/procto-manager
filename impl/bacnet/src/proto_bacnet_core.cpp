@@ -464,7 +464,8 @@ int bacnet_proto_read(proto_ctx_t *ctx, bacnet_read_t *req)
         return PROTO_ERROR_UNSUPPORTED;
     }
 
-    return execute_read_property(context, req);
+    uint8_t invoke_id = 0;
+    return execute_read_property(context, req, &invoke_id);
 }
 
 /* -------------------------------------------------------------------------- */
@@ -478,7 +479,177 @@ int bacnet_proto_write(proto_ctx_t *ctx, const bacnet_write_t *req)
         return PROTO_ERROR_UNSUPPORTED;
     }
 
-    return execute_write_property(context, req);
+    uint8_t invoke_id = 0;
+    return execute_write_property(context, req, &invoke_id);
+}
+
+/* -------------------------------------------------------------------------- */
+/* 事件轮询接口                                                               */
+/* -------------------------------------------------------------------------- */
+
+int bacnet_poll_event(bacnet_event_t *event, uint32_t timeout_ms)
+{
+    if (!event) {
+        return PROTO_ERROR_PARAM;
+    }
+
+    BacnetContext *context = g_ctx;
+    if (!context) {
+        return PROTO_ERROR_INIT;
+    }
+
+    // 初始化事件为无事件
+    event->type = BACNET_EVENT_NONE;
+    event->status = PROTO_SUCCESS;
+    event->invoke_id = 0;
+
+    // 首先检查读队列
+    {
+        std::lock_guard<std::mutex> lock(context->read_queue_mutex);
+        if (context->read_count > 0) {
+            // 查找已完成的读请求（状态已被回调函数更新）
+            for (size_t i = 0; i < context->read_count; ++i) {
+                size_t idx = (context->read_head + i) % BacnetContext::kReadQueueSize;
+                auto &item = context->read_queue[idx];
+                
+                // 只有当状态被更新（成功或失败）时才返回事件
+                if (item.is_completed) {
+                    event->type = BACNET_EVENT_READ_COMPLETE;
+                    event->status = item.status;
+                    event->invoke_id = item.invoke_id;
+                    event->data.read_complete.device_instance = item.device_instance;
+                    event->data.read_complete.object_type = item.object_type;
+                    event->data.read_complete.object_instance = item.object_instance;
+                    event->data.read_complete.property_id = item.property_id;
+                    event->data.read_complete.value = item.value;
+                    
+                    // 释放队列中item的动态内存
+                    bacnet_data_value_free(&item.value);
+                    
+                    // 移除队列项
+                    // 注意：这里需要移动队列中的其他项来填补空隙
+                    for (size_t j = i; j < context->read_count - 1; ++j) {
+                        size_t src_idx = (context->read_head + j + 1) % BacnetContext::kReadQueueSize;
+                        size_t dst_idx = (context->read_head + j) % BacnetContext::kReadQueueSize;
+                        context->read_queue[dst_idx] = context->read_queue[src_idx];
+                    }
+                    context->read_count--;
+                    
+                    return PROTO_SUCCESS;
+                }
+            }
+        }
+    }
+
+    // 检查写队列是否有完成的写入
+    {
+        std::lock_guard<std::mutex> lock(context->write_queue_mutex);
+        if (context->write_count > 0) {
+            // 查找已完成的写入项（is_completed为true）
+            for (size_t i = 0; i < context->write_count; ++i) {
+                size_t idx = (context->write_head + i) % BacnetContext::kWriteQueueSize;
+                auto &item = context->write_queue[idx];
+                
+                // 只有当is_completed为true时才返回事件
+                if (item.is_completed) {
+                    event->type = BACNET_EVENT_WRITE_COMPLETE;
+                    event->status = item.status;
+                    event->invoke_id = item.invoke_id;
+                    event->data.write_complete.device_instance = item.device_instance;
+                    event->data.write_complete.object_type = item.object_type;
+                    event->data.write_complete.object_instance = item.object_instance;
+                    event->data.write_complete.property_id = item.property_id;
+                    
+                    // 从队列中移除
+                    context->write_head = (context->write_head + 1) % BacnetContext::kWriteQueueSize;
+                    context->write_count--;
+                    
+                    return PROTO_SUCCESS;
+                }
+            }
+        }
+    }
+
+    // 如果是非阻塞模式，直接返回无事件
+    if (timeout_ms == 0) {
+        return PROTO_TIMEOUT;
+    }
+
+    // 阻塞等待事件（简化实现，实际应该使用条件变量）
+    // 这里暂时使用简单的轮询
+    auto start_time = std::chrono::steady_clock::now();
+    while (true) {
+        // 检查读队列
+        {
+            std::lock_guard<std::mutex> lock(context->read_queue_mutex);
+            if (context->read_count > 0) {
+                // 查找已完成的读请求
+                for (size_t i = 0; i < context->read_count; ++i) {
+                    size_t idx = (context->read_head + i) % BacnetContext::kReadQueueSize;
+                    auto &item = context->read_queue[idx];
+                    
+                    if (item.is_completed) {
+                        event->type = BACNET_EVENT_READ_COMPLETE;
+                        event->status = item.status;
+                        event->invoke_id = item.invoke_id;
+                        event->data.read_complete.device_instance = item.device_instance;
+                        event->data.read_complete.object_type = item.object_type;
+                        event->data.read_complete.object_instance = item.object_instance;
+                        event->data.read_complete.property_id = item.property_id;
+                        event->data.read_complete.value = item.value;
+                        
+                        bacnet_data_value_free(&item.value);
+                        
+                        // 移除队列项
+                        for (size_t j = i; j < context->read_count - 1; ++j) {
+                            size_t src_idx = (context->read_head + j + 1) % BacnetContext::kReadQueueSize;
+                            size_t dst_idx = (context->read_head + j) % BacnetContext::kReadQueueSize;
+                            context->read_queue[dst_idx] = context->read_queue[src_idx];
+                        }
+                        context->read_count--;
+                        
+                        return PROTO_SUCCESS;
+                    }
+                }
+            }
+        }
+
+        // 检查写队列
+        {
+            std::lock_guard<std::mutex> lock(context->write_queue_mutex);
+            if (context->write_count > 0) {
+                for (size_t i = 0; i < context->write_count; ++i) {
+                    size_t idx = (context->write_head + i) % BacnetContext::kWriteQueueSize;
+                    auto &item = context->write_queue[idx];
+                    
+                    if (item.is_completed) {
+                        event->type = BACNET_EVENT_WRITE_COMPLETE;
+                        event->status = item.status;
+                        event->invoke_id = item.invoke_id;
+                        event->data.write_complete.device_instance = item.device_instance;
+                        event->data.write_complete.object_type = item.object_type;
+                        event->data.write_complete.object_instance = item.object_instance;
+                        event->data.write_complete.property_id = item.property_id;
+                        
+                        context->write_head = (context->write_head + 1) % BacnetContext::kWriteQueueSize;
+                        context->write_count--;
+                        
+                        return PROTO_SUCCESS;
+                    }
+                }
+            }
+        }
+
+        // 检查超时
+        auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::steady_clock::now() - start_time).count();
+        if (elapsed >= timeout_ms) {
+            return PROTO_TIMEOUT;
+        }
+
+        // 短暂等待后重试
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
 }
 
 /* -------------------------------------------------------------------------- */
@@ -554,8 +725,8 @@ int plc_proto_read(void *req)
         return PROTO_ERROR_INIT;
     }
 
-    // 优先从读队列取数据
-    {
+    // 优先从读队列取数据（仅当check_only模式时）
+    if (read_req->check_only) {
         std::lock_guard<std::mutex> lock(context->read_queue_mutex);
         if (context->read_count > 0) {
             log_debug("[PLC] Found data in read queue, count={}", context->read_count);
@@ -564,6 +735,7 @@ int plc_proto_read(void *req)
             read_req->object_type = item.object_type;
             read_req->object_instance = item.object_instance;
             read_req->property_id = item.property_id;
+            read_req->invoke_id = item.invoke_id;  // 返回invoke_id
             if (read_req->value) {
                 *read_req->value = item.value;
                 // 注意：数据已复制到read_req->value，调用者负责释放内存
@@ -574,20 +746,19 @@ int plc_proto_read(void *req)
             context->read_count--;
             log_debug("[PLC] Returning data from queue");
             return PROTO_SUCCESS;
+        } else {
+            log_debug("[PLC] Check only mode, no data in queue");
+            return -7; // PROTO_NO_DATA
         }
     }
 
-    // 如果仅检查队列，返回无数据
-    if (read_req->check_only) {
-        log_debug("[PLC] Check only mode, no data in queue");
-        return -7; // PROTO_NO_DATA
-    }
-
-    // 队列无数据，发起底层读请求，立即返回无数据
-    log_debug("[PLC] No data in queue, initiating read request");
-    rc = bacnet_proto_read(&g_plc_ctx, read_req);
-    log_debug("[PLC] bacnet_proto_read returned: {}", rc);
-    return -7; // PROTO_NO_DATA
+    // 非check_only模式：只发起请求，不消费队列
+    log_debug("[PLC] Initiating read request (non-check-only mode)");
+    uint8_t invoke_id = 0;
+    rc = execute_read_property(context, read_req, &invoke_id);
+    read_req->invoke_id = invoke_id;  // 设置invoke_id到请求结构体
+    log_debug("[PLC] execute_read_property returned: {}, invoke_id: {}", rc, invoke_id);
+    return rc;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -615,32 +786,15 @@ int plc_proto_write(void *req)
         return PROTO_ERROR_INIT;
     }
 
-    // 只入队写请求，不直接下发
-    {
-        std::lock_guard<std::mutex> lock(context->write_queue_mutex);
-        if (context->write_count < BacnetContext::kWriteQueueSize) {
-            auto &item = context->write_queue[context->write_tail];
-            item.device_instance = write_req->device_instance;
-            item.object_type = write_req->object_type;
-            item.object_instance = write_req->object_instance;
-            item.property_id = write_req->property_id;
-            item.value = write_req->value;
-            item.priority = write_req->priority;
-            item.array_index = write_req->array_index;
-            item.length = 0; // TODO: 从 value 中推导长度
-            item.status = PROTO_SUCCESS;
-            item.timestamp = std::chrono::steady_clock::now();
-            context->write_tail = (context->write_tail + 1) % BacnetContext::kWriteQueueSize;
-            context->write_count++;
-            
-            // 通知工作线程处理写队列
-            context->write_queue_cv.notify_one();
-            
-            return PROTO_SUCCESS;
-        } else {
-            log_warn("[BACnet] Write queue full, discarding write request");
-            return PROTO_ERROR_WRITE;
-        }
+    // 直接执行写操作，返回invoke_id
+    // 写操作不需要入队，因为它是同步的，回调函数会直接处理ACK
+    uint8_t invoke_id = 0;
+    rc = execute_write_property(context, write_req, &invoke_id);
+    if (rc == PROTO_SUCCESS) {
+        write_req->invoke_id = invoke_id;  // 返回invoke_id
+        return PROTO_SUCCESS;
+    } else {
+        return rc;
     }
 }
 

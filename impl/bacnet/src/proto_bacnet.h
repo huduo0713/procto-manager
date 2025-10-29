@@ -109,6 +109,7 @@ typedef struct {
     uint32_t            timeout_ms;        /* 操作超时 */
     bacnet_data_value_t *value;            /* 输出值缓冲区 */
     bool                check_only;        /* 是否仅检查队列而不发送新请求 */
+    uint8_t             invoke_id;         /* 输出：BACnet调用ID，用于匹配响应 */
 } bacnet_read_t;
 
 typedef struct {
@@ -120,7 +121,45 @@ typedef struct {
     uint8_t            priority;           /* 写入优先级，0 表示使用默认 */
     uint32_t           timeout_ms;
     bacnet_data_value_t value;             /* 写入值 */
+    uint8_t            invoke_id;          /* 输出：BACnet调用ID，用于匹配响应 */
 } bacnet_write_t;
+
+/* -------------------------------------------------------------------------- */
+/* 事件类型定义                                                               */
+/* -------------------------------------------------------------------------- */
+
+typedef enum {
+    BACNET_EVENT_NONE = 0,           /* 无事件 */
+    BACNET_EVENT_READ_COMPLETE,      /* 读取完成 */
+    BACNET_EVENT_WRITE_COMPLETE,     /* 写入完成 */
+    BACNET_EVENT_DEVICE_DISCOVERED,  /* 设备发现 */
+    BACNET_EVENT_ERROR               /* 错误事件 */
+} bacnet_event_type_t;
+
+/* -------------------------------------------------------------------------- */
+/* 事件结构体定义                                                             */
+/* -------------------------------------------------------------------------- */
+
+typedef struct {
+    bacnet_event_type_t type;        /* 事件类型 */
+    proto_status_t status;           /* 操作状态 */
+    uint8_t invoke_id;               /* BACnet调用ID，用于精确匹配 */
+    union {
+        struct {
+            uint32_t device_instance;
+            uint16_t object_type;
+            uint32_t object_instance;
+            uint32_t property_id;
+            bacnet_data_value_t value;  /* 读取结果 */
+        } read_complete;
+        struct {
+            uint32_t device_instance;
+            uint16_t object_type;
+            uint32_t object_instance;
+            uint32_t property_id;
+        } write_complete;
+    } data;
+} bacnet_event_t;
 
 /* -------------------------------------------------------------------------- */
 /* 状态机定义                                                                 */
@@ -208,6 +247,31 @@ void proto_disconnect(proto_ctx_t *ctx);
 // 内部读写接口（由 plc_proto_read/write 自动调用）
 int bacnet_proto_read(proto_ctx_t *ctx, bacnet_read_t *req);
 int bacnet_proto_write(proto_ctx_t *ctx, const bacnet_write_t *req);
+
+/* -------------------------------------------------------------------------- */
+/* 事件轮询接口                                                               */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * @brief 轮询等待异步操作结果
+ * @param event 输出事件结构体指针
+ * @param timeout_ms 等待超时时间 (0=非阻塞)
+ * @return PROTO_SUCCESS 有事件，PROTO_TIMEOUT 超时，其他值为错误码
+ * 
+ * 功能：
+ * 1. 轮询事件队列
+ * 2. 返回最早的未处理事件
+ * 3. 支持阻塞和非阻塞模式
+ * 4. 超时控制
+ * 
+ * 使用方式：
+ *   bacnet_event_t event;
+ *   int ret = bacnet_poll_event(&event, 1000);  // 等待1秒
+ *   if (ret == PROTO_SUCCESS) {
+ *       // 处理事件
+ *   }
+ */
+int bacnet_poll_event(bacnet_event_t *event, uint32_t timeout_ms);
 
 /* -------------------------------------------------------------------------- */
 /* 热配置管理接口（通过信号触发，不使用监控线程）                             */

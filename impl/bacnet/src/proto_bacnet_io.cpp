@@ -42,7 +42,7 @@ BACNET_ADDRESS resolve_target_address(BacnetContext *context, uint32_t device_in
 /* 执行ReadProperty操作                                                       */
 /* -------------------------------------------------------------------------- */
 
-proto_status_t execute_read_property(BacnetContext *context, bacnet_read_t *req)
+proto_status_t execute_read_property(BacnetContext *context, bacnet_read_t *req, uint8_t *invoke_id_out)
 {
     if (!context || !req) {
         return PROTO_ERROR_PARAM;
@@ -104,6 +104,37 @@ proto_status_t execute_read_property(BacnetContext *context, bacnet_read_t *req)
         context->active_operation.invoke_id = invoke_id;
         set_operation_state(context, BACNET_OP_PENDING);
 
+        // 将请求放入读队列，等待回调函数更新
+        {
+            std::lock_guard<std::mutex> lock_queue(context->read_queue_mutex);
+            if (context->read_count < BacnetContext::kReadQueueSize) {
+                auto &item = context->read_queue[context->read_tail];
+                item.device_instance = req->device_instance;
+                item.object_type = req->object_type;
+                item.object_instance = req->object_instance;
+                item.property_id = req->property_id;
+                item.value = *req->value;  // 复制初始值
+                item.status = PROTO_SUCCESS;  // 初始状态
+                item.is_completed = false;  // 等待回调更新
+                item.timestamp = std::chrono::steady_clock::now();
+                item.original_request = req;
+                item.invoke_id = invoke_id;  // 保存invoke_id用于匹配
+                
+                context->read_tail = (context->read_tail + 1) % BacnetContext::kReadQueueSize;
+                context->read_count++;
+                
+                log_debug("[BACnet] Read request queued (invoke_id: {}, queue size: {})", invoke_id, context->read_count);
+            } else {
+                log_error("[BACnet] Read queue full, cannot queue request");
+                return PROTO_ERROR_READ;
+            }
+        }
+
+        // 输出invoke_id
+        if (invoke_id_out) {
+            *invoke_id_out = invoke_id;
+        }
+
         log_info("[BACnet] ReadProperty request sent (device: {}, object: {}/{}, property: {}, invoke_id: {})",
                  req->device_instance, req->object_type, req->object_instance, 
                  req->property_id, invoke_id);
@@ -116,7 +147,7 @@ proto_status_t execute_read_property(BacnetContext *context, bacnet_read_t *req)
 /* 执行WriteProperty操作                                                      */
 /* -------------------------------------------------------------------------- */
 
-proto_status_t execute_write_property(BacnetContext *context, const bacnet_write_t *req)
+proto_status_t execute_write_property(BacnetContext *context, const bacnet_write_t *req, uint8_t *invoke_id_out)
 {
     if (!context || !req) {
         return PROTO_ERROR_PARAM;
@@ -188,7 +219,36 @@ proto_status_t execute_write_property(BacnetContext *context, const bacnet_write
         context->active_operation.invoke_id = invoke_id;
         set_operation_state(context, BACNET_OP_PENDING);
 
-        log_info("[BACnet] WriteProperty request sent (device: {}, object: {}/{}, property: {}, priority: {}, invoke_id: {})",
+        // 将请求添加到写队列
+        {
+            std::lock_guard<std::mutex> lock_queue(context->write_queue_mutex);
+            if (context->write_count >= BacnetContext::kWriteQueueSize) {
+                log_error("[BACnet] Write queue full, cannot queue write request");
+                context->active_operation.reset();
+                return PROTO_ERROR_MEMORY;
+            }
+
+            size_t idx = (context->write_head + context->write_count) % BacnetContext::kWriteQueueSize;
+            auto &item = context->write_queue[idx];
+            item.device_instance = req->device_instance;
+            item.object_type = req->object_type;
+            item.object_instance = req->object_instance;
+            item.property_id = req->property_id;
+            item.invoke_id = invoke_id;
+            item.status = PROTO_SUCCESS;  // 初始状态为成功，等待ACK或错误
+            item.is_completed = false;    // 标记为未完成
+            item.timestamp = std::chrono::steady_clock::now();
+
+            context->write_count++;
+            log_debug("[BACnet] Write request queued (invoke_id: {}, queue size: {})", invoke_id, context->write_count);
+        }
+
+        // 输出invoke_id
+        if (invoke_id_out) {
+            *invoke_id_out = invoke_id;
+        }
+
+        log_info("[BACnet] WriteProperty request sent and queued (device: {}, object: {}/{}, property: {}, priority: {}, invoke_id: {})",
                  req->device_instance, req->object_type, req->object_instance, 
                  req->property_id, priority, invoke_id);
     }

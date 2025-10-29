@@ -49,6 +49,16 @@ set_common_include_dirs(bacnet_demo)
 
 target_link_libraries(bacnet_demo PRIVATE ${CMAKE_PROJECT_NAME} ${PROTOCOL_LIBS})
 
+# 新增并发测试程序
+add_executable(concurrent_test demo/concurrent_test.c)
+
+set_common_include_dirs(concurrent_test)
+
+target_link_libraries(concurrent_test PRIVATE ${CMAKE_PROJECT_NAME} ${PROTOCOL_LIBS})
+
+set_target_properties(concurrent_test PROPERTIES
+LINK_FLAGS "-static-libgcc -static-libstdc++")
+
 # \------------------------------------------------------------------
 
 # 新增: 将 C++ 运行时静态编译进可执行文件
