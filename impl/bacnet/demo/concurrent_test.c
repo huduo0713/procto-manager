@@ -22,20 +22,20 @@ void test_concurrent_reads() {
         uint8_t invoke_id;
     } objects[] = {
         {OBJECT_ANALOG_INPUT, 1, "analog-input-1", 0},
-        {OBJECT_ANALOG_INPUT, 1, "analog-input-1", 0},
-        {OBJECT_ANALOG_INPUT, 1, "analog-input-1", 0},
-        {OBJECT_ANALOG_INPUT, 1, "analog-input-1", 0},
-        {OBJECT_ANALOG_INPUT, 1, "analog-input-1", 0},
-        {OBJECT_ANALOG_INPUT, 1, "analog-input-1", 0},
-        {OBJECT_ANALOG_INPUT, 1, "analog-input-1", 0},
-        {OBJECT_ANALOG_INPUT, 1, "analog-input-1", 0},
-        // {OBJECT_ANALOG_OUTPUT, 1, "analog-output-1", 0},
-        // {OBJECT_ANALOG_VALUE, 1, "analog-value-1", 0},
-        // {OBJECT_BINARY_INPUT, 1, "binary-input-1", 0},
-        // {OBJECT_BINARY_OUTPUT, 1, "binary-output-1", 0},
-        // {OBJECT_BINARY_VALUE, 1, "binary-value-1", 0},
-        // {OBJECT_INTEGER_VALUE, 1, "integer-value-1", 0},
-        // {OBJECT_CHARACTERSTRING_VALUE, 1, "characterstring-value-1", 0}
+        // {OBJECT_ANALOG_INPUT, 1, "analog-input-1", 0},
+        // {OBJECT_ANALOG_INPUT, 1, "analog-input-1", 0},
+        // {OBJECT_ANALOG_INPUT, 1, "analog-input-1", 0},
+        // {OBJECT_ANALOG_INPUT, 1, "analog-input-1", 0},
+        // {OBJECT_ANALOG_INPUT, 1, "analog-input-1", 0},
+        // {OBJECT_ANALOG_INPUT, 1, "analog-input-1", 0},
+        // {OBJECT_ANALOG_INPUT, 1, "analog-input-1", 0},
+        {OBJECT_ANALOG_OUTPUT, 1, "analog-output-1", 0},
+        {OBJECT_ANALOG_VALUE, 1, "analog-value-1", 0},
+        {OBJECT_BINARY_INPUT, 1, "binary-input-1", 0},
+        {OBJECT_BINARY_OUTPUT, 1, "binary-output-1", 0},
+        {OBJECT_BINARY_VALUE, 1, "binary-value-1", 0},
+        {OBJECT_INTEGER_VALUE, 1, "integer-value-1", 0},
+        {OBJECT_CHARACTERSTRING_VALUE, 1, "characterstring-value-1", 0}
     };
 
     const int NUM_OBJECTS = sizeof(objects) / sizeof(objects[0]);
@@ -388,6 +388,66 @@ int main() {
 
     // 测试并发写入
     test_concurrent_writes();
+
+    printf("\n🔁 测试长期运行 - 循环读取 analog-input-1\n");
+    printf("==========================================\n");
+    printf("💡 模拟真实生产环境，按 Ctrl+C 停止\n\n");
+
+    int loop_count = 0;
+    while (true) {
+        loop_count++;
+        printf("[循环 #%d] 📡 读取 analog-input-1...\n", loop_count);
+
+        bacnet_data_value_t value;
+        bacnet_read_t read_req = {
+            .device_instance = 5678,
+            .object_type = OBJECT_ANALOG_INPUT,
+            .object_instance = 1,
+            .property_id = PROP_PRESENT_VALUE,
+            .array_index = -1,
+            .timeout_ms = 5000,
+            .value = &value,
+            .check_only = false,
+            .invoke_id = 0
+        };
+
+        int result = plc_proto_read(&read_req);
+        if (result == PROTO_SUCCESS) {
+            uint8_t invoke_id = read_req.invoke_id;
+            printf("  ✅ 请求已提交 (invoke_id: %d)\n", invoke_id);
+
+            // 等待响应
+            time_t start_time = time(NULL);
+            bool got_response = false;
+
+            while (!got_response && (time(NULL) - start_time) < 5) {
+                bacnet_event_t event;
+                int poll_result = bacnet_poll_event(&event, 100);
+
+                if (poll_result == PROTO_SUCCESS && event.type == BACNET_EVENT_READ_COMPLETE) {
+                    if (event.invoke_id == invoke_id) {
+                        if (event.status == PROTO_SUCCESS) {
+                            printf("  ✅ 读取成功: %.2f\n", 
+                                   event.data.read_complete.value.value.real_value);
+                        } else {
+                            printf("  ❌ 读取失败: status=%d\n", event.status);
+                        }
+                        got_response = true;
+                    }
+                }
+            }
+
+            if (!got_response) {
+                printf("  ⚠️ 超时，未收到响应\n");
+            }
+        } else {
+            printf("  ❌ 请求提交失败: %d\n", result);
+        }
+
+        // 延时 2 秒后继续下一次循环
+        printf("  ⏱️ 等待 2 秒...\n\n");
+        sleep(2);
+    }
 
     printf("\n🎯 所有测试完成！\n");
     printf("💡 提示：\n");

@@ -20,6 +20,7 @@ typedef enum {
     PROTO_ERROR_PARAM = -6,
     PROTO_ERROR_MEMORY = -8,
     PROTO_NO_DATA = -7,
+    PROTO_TIMEOUT = -9,
 } proto_status_t;
 typedef struct {    
     char resource_name[64];    

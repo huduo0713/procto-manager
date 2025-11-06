@@ -221,9 +221,7 @@ public:
     BacnetContext& operator=(BacnetContext&&) noexcept = default;
 
 public:
-    // 环形缓冲队列定义
-    static constexpr size_t kReadQueueSize = 64;
-    static constexpr size_t kWriteQueueSize = 64;
+    // 哈希表队列定义（使用 invoke_id 作为 key）
     struct ReadBufferItem {
         uint32_t device_instance;
         uint16_t object_type;
@@ -251,17 +249,12 @@ public:
         bacnet_write_t *original_request;  // 原始请求指针，用于事件关联
         uint8_t invoke_id;  // BACnet协议的调用ID，用于精确匹配
     };
-    // 读缓冲队列
-    ReadBufferItem read_queue[kReadQueueSize] = {};
-    size_t read_head = 0;
-    size_t read_tail = 0;
-    size_t read_count = 0;
+    
+    // 读写队列：使用哈希表存储，invoke_id 作为 key，实现 O(1) 查找和删除
+    std::unordered_map<uint8_t, ReadBufferItem> read_queue;
     std::mutex read_queue_mutex;
-    // 写缓冲队列
-    WriteBufferItem write_queue[kWriteQueueSize] = {};
-    size_t write_head = 0;
-    size_t write_tail = 0;
-    size_t write_count = 0;
+    
+    std::unordered_map<uint8_t, WriteBufferItem> write_queue;
     std::mutex write_queue_mutex;
     std::condition_variable write_queue_cv;
 

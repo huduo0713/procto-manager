@@ -1,4 +1,5 @@
 #include "proto_bacnet_internal.hpp"
+#include <bacnet/bactext.h>
 
 #include <yaml.h>
 
@@ -218,7 +219,9 @@ proto_status_t store_application_value(bacnet_read_t *req, const BACNET_APPLICAT
         }
             
         default:
-            log_warn("[BACnet] Unsupported application data tag: {}", static_cast<int>(value.tag));
+            log_warn("[BACnet] Unsupported application data tag: {} ({})", 
+                     bactext_application_tag_name(value.tag), 
+                     static_cast<int>(value.tag));
             return PROTO_ERROR_UNSUPPORTED;
     }
     

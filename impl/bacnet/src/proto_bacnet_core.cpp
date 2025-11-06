@@ -506,42 +506,28 @@ int bacnet_poll_event(bacnet_event_t *event, uint32_t timeout_ms)
     // 首先检查读队列
     {
         std::lock_guard<std::mutex> lock(context->read_queue_mutex);
-        if (context->read_count > 0) {
-            // 查找已完成的读请求（状态已被回调函数更新）
-            for (size_t i = 0; i < context->read_count; ++i) {
-                size_t idx = (context->read_head + i) % BacnetContext::kReadQueueSize;
-                auto &item = context->read_queue[idx];
+        // 遍历哈希表，查找已完成的请求
+        for (auto it = context->read_queue.begin(); it != context->read_queue.end(); ++it) {
+            auto &item = it->second;
+            
+            // 只有当状态被更新（成功或失败）时才返回事件
+            if (item.is_completed) {
+                event->type = BACNET_EVENT_READ_COMPLETE;
+                event->status = item.status;
+                event->invoke_id = item.invoke_id;
+                event->data.read_complete.device_instance = item.device_instance;
+                event->data.read_complete.object_type = item.object_type;
+                event->data.read_complete.object_instance = item.object_instance;
+                event->data.read_complete.property_id = item.property_id;
+                event->data.read_complete.value = item.value;
                 
-                // 只有当状态被更新（成功或失败）时才返回事件
-                if (item.is_completed) {
-                    event->type = BACNET_EVENT_READ_COMPLETE;
-                    event->status = item.status;
-                    event->invoke_id = item.invoke_id;
-                    event->data.read_complete.device_instance = item.device_instance;
-                    event->data.read_complete.object_type = item.object_type;
-                    event->data.read_complete.object_instance = item.object_instance;
-                    event->data.read_complete.property_id = item.property_id;
-                    event->data.read_complete.value = item.value;
-                    
-                    // 释放队列中item的动态内存
-                    bacnet_data_value_free(&item.value);
-                    
-                    // 移除队列项
-                    // 注意：这里需要移动队列中的其他项来填补空隙
-                    for (size_t j = i; j < context->read_count - 1; ++j) {
-                        size_t src_idx = (context->read_head + j + 1) % BacnetContext::kReadQueueSize;
-                        size_t dst_idx = (context->read_head + j) % BacnetContext::kReadQueueSize;
-                        context->read_queue[dst_idx] = context->read_queue[src_idx];
-                    }
-                    context->read_count--;
-                    
-                    // 如果队列变空，重置read_tail
-                    if (context->read_count == 0) {
-                        context->read_tail = context->read_head;
-                    }
-                    
-                    return PROTO_SUCCESS;
-                }
+                // 释放队列中item的动态内存
+                bacnet_data_value_free(&item.value);
+                
+                // 从哈希表中删除：O(1) 操作
+                context->read_queue.erase(it);
+                
+                return PROTO_SUCCESS;
             }
         }
     }
@@ -549,28 +535,24 @@ int bacnet_poll_event(bacnet_event_t *event, uint32_t timeout_ms)
     // 检查写队列是否有完成的写入
     {
         std::lock_guard<std::mutex> lock(context->write_queue_mutex);
-        if (context->write_count > 0) {
-            // 查找已完成的写入项（is_completed为true）
-            for (size_t i = 0; i < context->write_count; ++i) {
-                size_t idx = (context->write_head + i) % BacnetContext::kWriteQueueSize;
-                auto &item = context->write_queue[idx];
+        // 遍历哈希表，查找已完成的写入
+        for (auto it = context->write_queue.begin(); it != context->write_queue.end(); ++it) {
+            auto &item = it->second;
+            
+            // 只有当is_completed为true时才返回事件
+            if (item.is_completed) {
+                event->type = BACNET_EVENT_WRITE_COMPLETE;
+                event->status = item.status;
+                event->invoke_id = item.invoke_id;
+                event->data.write_complete.device_instance = item.device_instance;
+                event->data.write_complete.object_type = item.object_type;
+                event->data.write_complete.object_instance = item.object_instance;
+                event->data.write_complete.property_id = item.property_id;
                 
-                // 只有当is_completed为true时才返回事件
-                if (item.is_completed) {
-                    event->type = BACNET_EVENT_WRITE_COMPLETE;
-                    event->status = item.status;
-                    event->invoke_id = item.invoke_id;
-                    event->data.write_complete.device_instance = item.device_instance;
-                    event->data.write_complete.object_type = item.object_type;
-                    event->data.write_complete.object_instance = item.object_instance;
-                    event->data.write_complete.property_id = item.property_id;
-                    
-                    // 从队列中移除
-                    context->write_head = (context->write_head + 1) % BacnetContext::kWriteQueueSize;
-                    context->write_count--;
-                    
-                    return PROTO_SUCCESS;
-                }
+                // 从哈希表中删除：O(1) 操作
+                context->write_queue.erase(it);
+                
+                return PROTO_SUCCESS;
             }
         }
     }
@@ -587,39 +569,26 @@ int bacnet_poll_event(bacnet_event_t *event, uint32_t timeout_ms)
         // 检查读队列
         {
             std::lock_guard<std::mutex> lock(context->read_queue_mutex);
-            if (context->read_count > 0) {
-                // 查找已完成的读请求
-                for (size_t i = 0; i < context->read_count; ++i) {
-                    size_t idx = (context->read_head + i) % BacnetContext::kReadQueueSize;
-                    auto &item = context->read_queue[idx];
+            // 遍历哈希表，查找已完成的请求
+            for (auto it = context->read_queue.begin(); it != context->read_queue.end(); ++it) {
+                auto &item = it->second;
+                
+                if (item.is_completed) {
+                    event->type = BACNET_EVENT_READ_COMPLETE;
+                    event->status = item.status;
+                    event->invoke_id = item.invoke_id;
+                    event->data.read_complete.device_instance = item.device_instance;
+                    event->data.read_complete.object_type = item.object_type;
+                    event->data.read_complete.object_instance = item.object_instance;
+                    event->data.read_complete.property_id = item.property_id;
+                    event->data.read_complete.value = item.value;
                     
-                    if (item.is_completed) {
-                        event->type = BACNET_EVENT_READ_COMPLETE;
-                        event->status = item.status;
-                        event->invoke_id = item.invoke_id;
-                        event->data.read_complete.device_instance = item.device_instance;
-                        event->data.read_complete.object_type = item.object_type;
-                        event->data.read_complete.object_instance = item.object_instance;
-                        event->data.read_complete.property_id = item.property_id;
-                        event->data.read_complete.value = item.value;
-                        
-                        bacnet_data_value_free(&item.value);
-                        
-                        // 移除队列项
-                        for (size_t j = i; j < context->read_count - 1; ++j) {
-                            size_t src_idx = (context->read_head + j + 1) % BacnetContext::kReadQueueSize;
-                            size_t dst_idx = (context->read_head + j) % BacnetContext::kReadQueueSize;
-                            context->read_queue[dst_idx] = context->read_queue[src_idx];
-                        }
-                        context->read_count--;
-                        
-                        // 如果队列变空，重置read_tail
-                        if (context->read_count == 0) {
-                            context->read_tail = context->read_head;
-                        }
-                        
-                        return PROTO_SUCCESS;
-                    }
+                    bacnet_data_value_free(&item.value);
+                    
+                    // 从哈希表中删除：O(1) 操作
+                    context->read_queue.erase(it);
+                    
+                    return PROTO_SUCCESS;
                 }
             }
         }
@@ -627,25 +596,23 @@ int bacnet_poll_event(bacnet_event_t *event, uint32_t timeout_ms)
         // 检查写队列
         {
             std::lock_guard<std::mutex> lock(context->write_queue_mutex);
-            if (context->write_count > 0) {
-                for (size_t i = 0; i < context->write_count; ++i) {
-                    size_t idx = (context->write_head + i) % BacnetContext::kWriteQueueSize;
-                    auto &item = context->write_queue[idx];
+            // 遍历哈希表，查找已完成的写入
+            for (auto it = context->write_queue.begin(); it != context->write_queue.end(); ++it) {
+                auto &item = it->second;
+                
+                if (item.is_completed) {
+                    event->type = BACNET_EVENT_WRITE_COMPLETE;
+                    event->status = item.status;
+                    event->invoke_id = item.invoke_id;
+                    event->data.write_complete.device_instance = item.device_instance;
+                    event->data.write_complete.object_type = item.object_type;
+                    event->data.write_complete.object_instance = item.object_instance;
+                    event->data.write_complete.property_id = item.property_id;
                     
-                    if (item.is_completed) {
-                        event->type = BACNET_EVENT_WRITE_COMPLETE;
-                        event->status = item.status;
-                        event->invoke_id = item.invoke_id;
-                        event->data.write_complete.device_instance = item.device_instance;
-                        event->data.write_complete.object_type = item.object_type;
-                        event->data.write_complete.object_instance = item.object_instance;
-                        event->data.write_complete.property_id = item.property_id;
-                        
-                        context->write_head = (context->write_head + 1) % BacnetContext::kWriteQueueSize;
-                        context->write_count--;
-                        
-                        return PROTO_SUCCESS;
-                    }
+                    // 从哈希表中删除：O(1) 操作
+                    context->write_queue.erase(it);
+                    
+                    return PROTO_SUCCESS;
                 }
             }
         }
@@ -738,9 +705,12 @@ int plc_proto_read(void *req)
     // 优先从读队列取数据（仅当check_only模式时）
     if (read_req->check_only) {
         std::lock_guard<std::mutex> lock(context->read_queue_mutex);
-        if (context->read_count > 0) {
-            log_debug("[PLC] Found data in read queue, count={}", context->read_count);
-            auto &item = context->read_queue[context->read_head];
+        if (!context->read_queue.empty()) {
+            // 从哈希表中取出第一个已完成的项（实际上哈希表无序，这里简化处理）
+            auto it = context->read_queue.begin();
+            auto &item = it->second;
+            
+            log_debug("[PLC] Found data in read map, count={}", context->read_queue.size());
             read_req->device_instance = item.device_instance;
             read_req->object_type = item.object_type;
             read_req->object_instance = item.object_instance;
@@ -752,8 +722,10 @@ int plc_proto_read(void *req)
             }
             // 释放队列中item的动态内存
             bacnet_data_value_free(&item.value);
-            context->read_head = (context->read_head + 1) % BacnetContext::kReadQueueSize;
-            context->read_count--;
+            
+            // 从哈希表中删除：O(1) 操作
+            context->read_queue.erase(it);
+            
             log_debug("[PLC] Returning data from queue");
             return PROTO_SUCCESS;
         } else {
