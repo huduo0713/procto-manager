@@ -105,28 +105,24 @@ proto_status_t execute_read_property(BacnetContext *context, bacnet_read_t *req,
         context->active_operation.invoke_id = invoke_id;
         set_operation_state(context, BACNET_OP_PENDING);
 
-        // 将请求放入读队列，等待回调函数更新
+        // 建立 invoke_id -> ObjectKey 反向映射
         {
-            std::lock_guard<std::mutex> lock_queue(context->read_queue_mutex);
+            ObjectKey key{
+                req->device_instance,
+                req->object_type,
+                req->object_instance,
+                req->property_id
+            };
             
-            // 使用哈希表存储，invoke_id 作为 key
-            BacnetContext::ReadBufferItem item{};
-            item.device_instance = req->device_instance;
-            item.object_type = req->object_type;
-            item.object_instance = req->object_instance;
-            item.property_id = req->property_id;
-            item.value = *req->value;  // 复制初始值
-            item.status = PROTO_SUCCESS;  // 初始状态
-            item.is_completed = false;  // 等待回调更新
-            item.timestamp = std::chrono::steady_clock::now();
-            item.original_request = req;
-            item.invoke_id = invoke_id;  // 保存invoke_id用于匹配
+            std::lock_guard<std::mutex> lock_map(context->invoke_id_to_key_mutex);
+            context->invoke_id_to_key[invoke_id] = key;
             
-            // 插入哈希表：O(1) 操作
-            context->read_queue[invoke_id] = item;
-            
-            log_debug("[BACnet] Read request added to map (invoke_id: {}, map size: {})", 
-                     invoke_id, context->read_queue.size());
+            log_debug("[BACnet] Invoke ID {} mapped to {}-{}, {} (map size: {})",
+                     invoke_id,
+                     bactext_object_type_name(req->object_type),
+                     req->object_instance,
+                     bactext_property_name(req->property_id),
+                     context->invoke_id_to_key.size());
         }
 
         // 输出invoke_id
@@ -134,7 +130,7 @@ proto_status_t execute_read_property(BacnetContext *context, bacnet_read_t *req,
             *invoke_id_out = invoke_id;
         }
 
-        log_info("[BACnet] ReadProperty request sent (device: {}, object: {}-{}, property: {}, invoke_id: {})",
+        log_info("[BACnet] ReadProperty request sent (device: {}, {}-{}, {}, invoke_id: {})",
                  req->device_instance, 
                  bactext_object_type_name(req->object_type), 
                  req->object_instance,

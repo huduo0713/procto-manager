@@ -49,6 +49,8 @@ typedef struct {
     uint32_t read_timeout_ms;           /* ReadProperty 操作超时 */
     uint32_t write_timeout_ms;          /* WriteProperty 操作超时 */
     uint8_t  default_priority;          /* WriteProperty 默认优先级 (0 表示未指定) */
+    uint32_t cache_expiry_ms;           /* 读缓存过期时间 (毫秒，默认 1000) */
+    uint8_t  cache_strategy;            /* 缓存策略: 0=激进(每次都发), 1=保守(用缓存) */
 } bacnet_service_config_t;
 
 typedef struct {

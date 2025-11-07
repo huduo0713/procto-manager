@@ -1,0 +1,168 @@
+===========================================
+BACnet 驱动 - 状态和概念快速参考卡片
+===========================================
+
+📌 连接状态 (ConnectionState)
+-----------------------------
+0 = DISCONNECTED (未连接)
+1 = CONNECTING   (连接中，正在发送 Who-Is)
+2 = CONNECTED    (已连接，可以正常通信)
+3 = ERROR        (错误状态)
+
+日志函数: connection_state_to_string(state)
+
+
+📌 缓存策略 (CacheStrategy)
+--------------------------
+0 = Aggressive    (激进策略 - 每次都发送请求，立即返回缓存)
+1 = Conservative  (保守策略 - 仅缓存过期时发送请求)
+
+配置文件 (config.yaml):
+  cache_strategy: 0     # 策略
+  cache_expiry_ms: 1000 # 过期时间(毫秒)
+
+日志函数: cache_strategy_to_string(strategy)
+
+
+📌 Invoke ID 状态
+-----------------
+0-254 = 有效的 BACnet 事务 ID
+0xFF  = INVALID (无活跃请求)
+
+日志函数: invoke_id_to_string(id, buffer, size)
+检查函数: is_invoke_id_valid(id)
+
+
+📌 四元组 (ObjectKey) - 核心概念
+-------------------------------
+每个 BACnet 属性读取由四元组唯一标识：
+
+  {device_instance, object_type, object_instance, property_id}
+  
+示例：
+  {5678, analog-input, 1, present-value}  → AI-1 的当前值
+  {5678, analog-input, 1, description}    → AI-1 的描述 (不同property_id)
+  {5678, analog-input, 2, present-value}  → AI-2 的当前值 (不同instance)
+
+
+📌 active_invoke_id - 防重复机制
+--------------------------------
+作用: 防止对同一四元组发送重复请求
+范围: 针对**每个四元组**，不是针对整个对象
+
+并发规则:
+  ✅ 同一对象的不同属性 → 可以并发
+  ✅ 不同实例的同一属性 → 可以并发  
+  ✅ 不同设备的同一对象 → 可以并发
+  ❌ 相同四元组的重复调用 → 会被跳过
+
+示例:
+  plc_proto_read({5678, AI, 1, PV})   → 发送请求 (active=10)
+  plc_proto_read({5678, AI, 1, PV})   → 跳过发送 (已有active=10)
+  plc_proto_read({5678, AI, 1, DESC}) → 发送请求 (不同四元组!)
+
+
+📌 对象状态 (ObjectState)
+-------------------------
+每个四元组的完整状态:
+
+字段:
+  cached_value     - 缓存的值
+  has_valid_cache  - 是否有有效缓存
+  active_invoke_id - 活跃请求ID (0xFF=无)
+  timestamp        - 缓存时间戳
+  status           - 最后操作状态
+
+生命周期:
+  1. 首次读取 → has_valid_cache=false, 发送请求
+  2. 响应到达 → 更新缓存, active_invoke_id=0xFF
+  3. 缓存使用 → 检查过期时间
+  4. 缓存过期 → 发送新请求
+
+
+📌 常见日志解读
+---------------
+[PLC] Current connection state: 2 (CONNECTED)
+  → 已连接到设备
+
+[BACnet] Cache strategy: Aggressive (always send requests) (expiry: 1000ms)
+  → 激进策略，1秒缓存过期
+
+[PLC] Request sent: analog-input-1, present-value (invoke_id: 10)
+  → 发送了读取请求
+
+[PLC] Request pending: analog-input-1, present-value (active invoke_id: 10)
+  → 已有活跃请求，跳过发送（防重复）
+
+[BACnet] Cache stats - Objects: 8 (cached: 8, active: 1)
+  → 8个对象，全部有缓存，1个请求在飞行中
+
+[BACnet] ReadProperty successful, cache updated (device: 5678, analog-input-1)
+  → 缓存已更新
+
+
+📌 调试命令
+-----------
+# 查看连接状态
+grep "connection state:" bacnet.log | tail -1
+
+# 查看缓存统计
+grep "Cache stats" bacnet.log | tail -5
+
+# 查看活跃请求
+grep "Request pending" bacnet.log | wc -l
+
+# 查看 Invoke ID 映射
+grep "mapped to\|map size" bacnet.log | tail -10
+
+# 监控性能
+watch -n 1 'grep "Cache stats" bacnet.log | tail -1'
+
+
+📌 性能分析
+-----------
+缓存统计解读:
+  cached: 10, active: 0  → ✅ 理想 (所有有缓存，无活跃请求)
+  cached: 10, active: 2  → ✅ 正常 (2个请求在等待)
+  cached:  3, active: 7  → ⚠️ 注意 (多数请求在等待)
+  cached:  0, active: 10 → ❌ 异常 (所有请求都超时?)
+
+
+📌 常见问题排查
+---------------
+Q: 看到大量 "Request pending"
+A: 网络延迟高或设备响应慢
+   解决: 增加 cache_expiry_ms 或降低 PLC 轮询频率
+
+Q: active 数量持续很高
+A: 请求堆积，响应未到达
+   解决: 检查网络、设备状态、超时设置
+
+Q: map size 一直增长
+A: Invoke ID 映射泄漏
+   解决: 检查 cleanup_stale_requests() 是否正常工作
+
+Q: 缓存命中率低
+A: 缓存过期太快
+   解决: 增大 cache_expiry_ms
+
+
+📌 快速参考
+-----------
+状态转换函数 (proto_bacnet_utils.cpp):
+  connection_state_to_string(ConnectionState)
+  cache_strategy_to_string(CacheStrategy)
+  invoke_id_to_string(uint8_t, char*, size_t)
+  is_invoke_id_valid(uint8_t)
+
+核心数据结构 (proto_bacnet_internal.hpp):
+  struct ObjectKey { ... }
+  struct ObjectState { ... }
+  std::unordered_map<ObjectKey, ObjectState> object_states
+  std::unordered_map<uint8_t, ObjectKey> invoke_id_to_key
+
+
+===========================================
+更新: 2025-11-06
+版本: v3.0 (对象缓存版)
+===========================================

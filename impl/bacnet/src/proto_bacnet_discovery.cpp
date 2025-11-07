@@ -112,43 +112,60 @@ void worker_loop_function(BacnetContext *context)
             last_timer_update = now;
         }
 
-        // 检查活动操作超时（简化版本，BACnet协议栈有自己的超时机制）
-        // 我们主要依赖回调函数来处理响应和错误
-        static auto last_timeout_check = std::chrono::steady_clock::now();
-        auto timeout_check_now = std::chrono::steady_clock::now();
-        auto elapsed_since_check = std::chrono::duration_cast<std::chrono::seconds>(timeout_check_now - last_timeout_check).count();
+        // 定期清理过期请求（每5秒一次）
+        static auto last_cleanup = std::chrono::steady_clock::now();
+        auto cleanup_now = std::chrono::steady_clock::now();
+        auto elapsed_since_cleanup = std::chrono::duration_cast<std::chrono::seconds>(
+            cleanup_now - last_cleanup).count();
         
-        if (elapsed_since_check >= 5) {  // 每5秒检查一次是否有长时间运行的操作
-            ActiveOperation snapshot;
-            if (get_active_operation_snapshot(context, snapshot)) {
-                auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(timeout_check_now - snapshot.start_time).count();
-                if (elapsed >= snapshot.timeout_ms) {
-                    log_warn("[BACnet] Operation timeout detected (type: {}, invoke_id: {}, elapsed: {}ms, timeout: {}ms)",
-                             static_cast<int>(snapshot.type), snapshot.invoke_id, elapsed, snapshot.timeout_ms);
-                    
-                    // 释放TSM资源
-                    if (snapshot.invoke_id != 0) {
-                        tsm_free_invoke_id(snapshot.invoke_id);
-                    }
-                    
-                    // 重置活动操作
-                    reset_active_operation_locked(context);
-                    
-                    // 多次超时可能表示连接断开
-                    static int consecutive_timeouts = 0;
-                    consecutive_timeouts++;
-                    if (consecutive_timeouts >= 3) {
-                        log_warn("[BACnet] Multiple consecutive timeouts, marking connection as disconnected");
-                        set_connection_state(context, BACNET_CONN_DISCONNECTED);
-                        consecutive_timeouts = 0;
-                    }
-                } else {
-                    // 重置连续超时计数器
-                    static int consecutive_timeouts = 0;
-                    consecutive_timeouts = 0;
+        if (elapsed_since_cleanup >= 5) {
+            cleanup_stale_requests(context);
+            last_cleanup = cleanup_now;
+        }
+
+        // 定期打印请求哈希表统计信息（每30秒一次）
+        static auto last_stats = std::chrono::steady_clock::now();
+        auto stats_now = std::chrono::steady_clock::now();
+        auto elapsed_since_stats = std::chrono::duration_cast<std::chrono::seconds>(
+            stats_now - last_stats).count();
+        
+        if (elapsed_since_stats >= 30) {
+            size_t object_states_count = 0;
+            size_t cached_objects = 0;
+            size_t active_requests = 0;
+            size_t invoke_id_mappings = 0;
+            size_t write_count = 0;
+            size_t write_completed = 0;
+            
+            {
+                std::lock_guard<std::mutex> lock(context->object_states_mutex);
+                object_states_count = context->object_states.size();
+                for (const auto &pair : context->object_states) {
+                    if (pair.second.has_valid_cache) cached_objects++;
+                    if (pair.second.active_invoke_id != 0) active_requests++;
                 }
             }
-            last_timeout_check = timeout_check_now;
+            
+            {
+                std::lock_guard<std::mutex> lock(context->invoke_id_to_key_mutex);
+                invoke_id_mappings = context->invoke_id_to_key.size();
+            }
+            
+            {
+                std::lock_guard<std::mutex> lock(context->write_queue_mutex);
+                write_count = context->write_queue.size();
+                for (const auto &pair : context->write_queue) {
+                    if (pair.second.is_completed) write_completed++;
+                }
+            }
+            
+            if (object_states_count > 0 || write_count > 0) {
+                log_info("[BACnet] Cache stats - Objects: {} (cached: {}, active: {}), InvokeID mappings: {}, Write queue: {}/{}",
+                         object_states_count, cached_objects, active_requests, 
+                         invoke_id_mappings, write_completed, write_count);
+            }
+            
+            last_stats = stats_now;
         }
 
         // 接收并处理数据包
@@ -232,7 +249,88 @@ void check_and_reconnect_if_needed(BacnetContext *context)
 }
 
 /* -------------------------------------------------------------------------- */
-/* 启动工作线程                                                               */
+/* 清理过期请求（防止内存泄漏）                                               */
+/* -------------------------------------------------------------------------- */
+
+void cleanup_stale_requests(BacnetContext *context) {
+    auto now = std::chrono::steady_clock::now();
+    
+    // 清理反向映射表中超时的invoke_id
+    std::vector<uint8_t> stale_invoke_ids;
+    {
+        std::lock_guard<std::mutex> lock(context->invoke_id_to_key_mutex);
+        std::lock_guard<std::mutex> lock_states(context->object_states_mutex);
+        
+        for (auto it = context->invoke_id_to_key.begin(); it != context->invoke_id_to_key.end(); ) {
+            uint8_t invoke_id = it->first;
+            const ObjectKey &key = it->second;
+            
+            // 检查对象状态
+            auto state_it = context->object_states.find(key);
+            if (state_it != context->object_states.end()) {
+                auto &state = state_it->second;
+                auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+                    now - state.timestamp).count();
+                
+                // 超时阈值：2倍请求超时时间（兜底保护）
+                uint32_t timeout_threshold = context->config.bacnet.services.read_timeout_ms * 2;
+                if (timeout_threshold == 0) timeout_threshold = 12000;
+                
+                if (elapsed > timeout_threshold && state.active_invoke_id == invoke_id) {
+                    log_warn("[BACnet] Cleaning stale read request (invoke_id: {}, elapsed: {}ms, threshold: {}ms)",
+                             invoke_id, elapsed, timeout_threshold);
+                    
+                    // 清除活跃请求标记
+                    state.active_invoke_id = 0;
+                    state.status = PROTO_TIMEOUT;
+                    
+                    // 释放TSM资源
+                    if (invoke_id != 0) {
+                        tsm_free_invoke_id(invoke_id);
+                    }
+                    
+                    // 删除反向映射
+                    it = context->invoke_id_to_key.erase(it);
+                    continue;
+                }
+            }
+            ++it;
+        }
+    }
+    
+    // 清理写队列
+    {
+        std::lock_guard<std::mutex> lock(context->write_queue_mutex);
+        for (auto it = context->write_queue.begin(); it != context->write_queue.end(); ) {
+            auto &item = it->second;
+            auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+                now - item.timestamp).count();
+            
+            uint32_t timeout_threshold = 12000;  // 写操作默认12秒
+            
+            if (elapsed > timeout_threshold) {
+                log_warn("[BACnet] Cleaning stale write request (invoke_id: {}, elapsed: {}ms)",
+                         item.invoke_id, elapsed);
+                
+                if (!item.is_completed) {
+                    item.status = PROTO_TIMEOUT;
+                    item.is_completed = true;
+                    
+                    if (item.invoke_id != 0) {
+                        tsm_free_invoke_id(item.invoke_id);
+                    }
+                }
+                
+                it = context->write_queue.erase(it);
+            } else {
+                ++it;
+            }
+        }
+    }
+}
+
+/* -------------------------------------------------------------------------- */
+/* 工作线程主循环                                                             */
 /* -------------------------------------------------------------------------- */
 
 void start_worker_thread(BacnetContext *context)

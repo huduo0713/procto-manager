@@ -184,6 +184,16 @@ proto_status_t initialize_context(BacnetContext *context)
     context->target_device_start = context->config.bacnet.discovery.target_device_start;
     context->target_device_end = context->config.bacnet.discovery.target_device_end;
 
+    // 设置缓存策略
+    context->cache_strategy = (context->config.bacnet.services.cache_strategy == 0) 
+                              ? CacheStrategy::Aggressive 
+                              : CacheStrategy::Conservative;
+    context->cache_expiry_ms = context->config.bacnet.services.cache_expiry_ms;
+    
+    log_debug("[BACnet] Cache strategy: {} (expiry: {}ms)", 
+              cache_strategy_to_string(context->cache_strategy),
+              context->cache_expiry_ms);
+
     log_debug("[BACnet] Initializing BACnet protocol stack...");
     // 初始化BACnet协议栈
     Device_Init(nullptr);
@@ -487,148 +497,6 @@ int bacnet_proto_write(proto_ctx_t *ctx, const bacnet_write_t *req)
 /* 事件轮询接口                                                               */
 /* -------------------------------------------------------------------------- */
 
-int bacnet_poll_event(bacnet_event_t *event, uint32_t timeout_ms)
-{
-    if (!event) {
-        return PROTO_ERROR_PARAM;
-    }
-
-    BacnetContext *context = g_ctx;
-    if (!context) {
-        return PROTO_ERROR_INIT;
-    }
-
-    // 初始化事件为无事件
-    event->type = BACNET_EVENT_NONE;
-    event->status = PROTO_SUCCESS;
-    event->invoke_id = 0;
-
-    // 首先检查读队列
-    {
-        std::lock_guard<std::mutex> lock(context->read_queue_mutex);
-        // 遍历哈希表，查找已完成的请求
-        for (auto it = context->read_queue.begin(); it != context->read_queue.end(); ++it) {
-            auto &item = it->second;
-            
-            // 只有当状态被更新（成功或失败）时才返回事件
-            if (item.is_completed) {
-                event->type = BACNET_EVENT_READ_COMPLETE;
-                event->status = item.status;
-                event->invoke_id = item.invoke_id;
-                event->data.read_complete.device_instance = item.device_instance;
-                event->data.read_complete.object_type = item.object_type;
-                event->data.read_complete.object_instance = item.object_instance;
-                event->data.read_complete.property_id = item.property_id;
-                event->data.read_complete.value = item.value;
-                
-                // 释放队列中item的动态内存
-                bacnet_data_value_free(&item.value);
-                
-                // 从哈希表中删除：O(1) 操作
-                context->read_queue.erase(it);
-                
-                return PROTO_SUCCESS;
-            }
-        }
-    }
-
-    // 检查写队列是否有完成的写入
-    {
-        std::lock_guard<std::mutex> lock(context->write_queue_mutex);
-        // 遍历哈希表，查找已完成的写入
-        for (auto it = context->write_queue.begin(); it != context->write_queue.end(); ++it) {
-            auto &item = it->second;
-            
-            // 只有当is_completed为true时才返回事件
-            if (item.is_completed) {
-                event->type = BACNET_EVENT_WRITE_COMPLETE;
-                event->status = item.status;
-                event->invoke_id = item.invoke_id;
-                event->data.write_complete.device_instance = item.device_instance;
-                event->data.write_complete.object_type = item.object_type;
-                event->data.write_complete.object_instance = item.object_instance;
-                event->data.write_complete.property_id = item.property_id;
-                
-                // 从哈希表中删除：O(1) 操作
-                context->write_queue.erase(it);
-                
-                return PROTO_SUCCESS;
-            }
-        }
-    }
-
-    // 如果是非阻塞模式，直接返回无事件
-    if (timeout_ms == 0) {
-        return PROTO_TIMEOUT;
-    }
-
-    // 阻塞等待事件（简化实现，实际应该使用条件变量）
-    // 这里暂时使用简单的轮询
-    auto start_time = std::chrono::steady_clock::now();
-    while (true) {
-        // 检查读队列
-        {
-            std::lock_guard<std::mutex> lock(context->read_queue_mutex);
-            // 遍历哈希表，查找已完成的请求
-            for (auto it = context->read_queue.begin(); it != context->read_queue.end(); ++it) {
-                auto &item = it->second;
-                
-                if (item.is_completed) {
-                    event->type = BACNET_EVENT_READ_COMPLETE;
-                    event->status = item.status;
-                    event->invoke_id = item.invoke_id;
-                    event->data.read_complete.device_instance = item.device_instance;
-                    event->data.read_complete.object_type = item.object_type;
-                    event->data.read_complete.object_instance = item.object_instance;
-                    event->data.read_complete.property_id = item.property_id;
-                    event->data.read_complete.value = item.value;
-                    
-                    bacnet_data_value_free(&item.value);
-                    
-                    // 从哈希表中删除：O(1) 操作
-                    context->read_queue.erase(it);
-                    
-                    return PROTO_SUCCESS;
-                }
-            }
-        }
-
-        // 检查写队列
-        {
-            std::lock_guard<std::mutex> lock(context->write_queue_mutex);
-            // 遍历哈希表，查找已完成的写入
-            for (auto it = context->write_queue.begin(); it != context->write_queue.end(); ++it) {
-                auto &item = it->second;
-                
-                if (item.is_completed) {
-                    event->type = BACNET_EVENT_WRITE_COMPLETE;
-                    event->status = item.status;
-                    event->invoke_id = item.invoke_id;
-                    event->data.write_complete.device_instance = item.device_instance;
-                    event->data.write_complete.object_type = item.object_type;
-                    event->data.write_complete.object_instance = item.object_instance;
-                    event->data.write_complete.property_id = item.property_id;
-                    
-                    // 从哈希表中删除：O(1) 操作
-                    context->write_queue.erase(it);
-                    
-                    return PROTO_SUCCESS;
-                }
-            }
-        }
-
-        // 检查超时
-        auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
-            std::chrono::steady_clock::now() - start_time).count();
-        if (elapsed >= timeout_ms) {
-            return PROTO_TIMEOUT;
-        }
-
-        // 短暂等待后重试
-        std::this_thread::sleep_for(std::chrono::milliseconds(10));
-    }
-}
-
 /* -------------------------------------------------------------------------- */
 /* PLC接口：读取                                                              */
 /* -------------------------------------------------------------------------- */
@@ -662,7 +530,9 @@ static int ensure_init_and_connect_locked()
     }
 
     bacnet_connection_state_t conn_state = get_connection_state(context);
-    log_debug("[PLC] Current connection state: {}", static_cast<int>(conn_state));
+    log_debug("[PLC] Current connection state: {} ({})", 
+              static_cast<int>(conn_state), 
+              connection_state_to_string(conn_state));
     
     if (conn_state != BACNET_CONN_CONNECTED) {
         log_info("[PLC] Connecting to device...");
@@ -684,7 +554,14 @@ int plc_proto_read(void *req)
     }
     auto *read_req = static_cast<bacnet_read_t *>(req);
     
-    log_debug("[PLC] plc_proto_read called for device {}", read_req->device_instance);
+    const char *obj_type_name = bactext_object_type_name(read_req->object_type);
+    const char *prop_name = bactext_property_name(read_req->property_id);
+    
+    log_debug("[PLC] plc_proto_read: device={}, {}-{}, {}",
+              read_req->device_instance,
+              obj_type_name,
+              read_req->object_instance,
+              prop_name);
 
     int rc;
     {
@@ -702,44 +579,75 @@ int plc_proto_read(void *req)
         return PROTO_ERROR_INIT;
     }
 
-    // 优先从读队列取数据（仅当check_only模式时）
-    if (read_req->check_only) {
-        std::lock_guard<std::mutex> lock(context->read_queue_mutex);
-        if (!context->read_queue.empty()) {
-            // 从哈希表中取出第一个已完成的项（实际上哈希表无序，这里简化处理）
-            auto it = context->read_queue.begin();
-            auto &item = it->second;
-            
-            log_debug("[PLC] Found data in read map, count={}", context->read_queue.size());
-            read_req->device_instance = item.device_instance;
-            read_req->object_type = item.object_type;
-            read_req->object_instance = item.object_instance;
-            read_req->property_id = item.property_id;
-            read_req->invoke_id = item.invoke_id;  // 返回invoke_id
+    // 构造对象键
+    ObjectKey key{
+        read_req->device_instance,
+        read_req->object_type,
+        read_req->object_instance,
+        read_req->property_id
+    };
+
+    std::lock_guard<std::mutex> lock(context->object_states_mutex);
+    auto it = context->object_states.find(key);
+    
+    // 检查缓存策略
+    if (context->cache_strategy == CacheStrategy::Conservative && it != context->object_states.end()) {
+        auto &state = it->second;
+        auto now = std::chrono::steady_clock::now();
+        auto age_ms = std::chrono::duration_cast<std::chrono::milliseconds>(now - state.timestamp).count();
+        
+        // 保守策略：如果有有效缓存且未过期，直接返回
+        if (state.has_valid_cache && age_ms < context->cache_expiry_ms) {
             if (read_req->value) {
-                *read_req->value = item.value;
-                // 注意：数据已复制到read_req->value，调用者负责释放内存
+                *read_req->value = state.cached_value;
             }
-            // 释放队列中item的动态内存
-            bacnet_data_value_free(&item.value);
-            
-            // 从哈希表中删除：O(1) 操作
-            context->read_queue.erase(it);
-            
-            log_debug("[PLC] Returning data from queue");
+            log_debug("[PLC] Cache hit (conservative): {}-{}, {} (age: {}ms)",
+                      obj_type_name, read_req->object_instance, prop_name, age_ms);
             return PROTO_SUCCESS;
-        } else {
-            log_debug("[PLC] Check only mode, no data in queue");
-            return -7; // PROTO_NO_DATA
         }
     }
 
-    // 非check_only模式：只发起请求，不消费队列
-    log_debug("[PLC] Initiating read request (non-check-only mode)");
+    // 激进策略 OR 无缓存 OR 缓存已过期：发送请求
+    // 但先检查是否有未完成的请求
+    if (it != context->object_states.end() && it->second.active_invoke_id != 0) {
+        // 已有活跃请求，返回 PENDING
+        char invoke_buf[16];
+        log_debug("[PLC] Request pending: {}-{}, {} (active invoke_id: {})",
+                  obj_type_name, read_req->object_instance, prop_name,
+                  invoke_id_to_string(it->second.active_invoke_id, invoke_buf, sizeof(invoke_buf)));
+        
+        // 如果有缓存，返回缓存数据（即使可能过期）
+        if (it->second.has_valid_cache && read_req->value) {
+            *read_req->value = it->second.cached_value;
+        }
+        return PROTO_NO_DATA;  // 请求进行中，暂无新数据
+    }
+
+    // 发起新请求
+    log_debug("[PLC] Initiating read request: {}-{}, {}",
+              obj_type_name, read_req->object_instance, prop_name);
+    
     uint8_t invoke_id = 0;
     rc = execute_read_property(context, read_req, &invoke_id);
-    read_req->invoke_id = invoke_id;  // 设置invoke_id到请求结构体
-    log_debug("[PLC] execute_read_property returned: {}, invoke_id: {}", rc, invoke_id);
+    
+    if (rc == PROTO_SUCCESS) {
+        // 创建或更新对象状态
+        BacnetContext::ObjectState &state = context->object_states[key];
+        state.active_invoke_id = invoke_id;
+        state.original_request = read_req;
+        state.status = PROTO_NO_DATA;  // 请求已发送，等待响应
+        
+        // 如果有旧缓存，可以立即返回（但标记为NO_DATA）
+        if (state.has_valid_cache && read_req->value) {
+            *read_req->value = state.cached_value;
+        }
+        
+        char invoke_buf[16];
+        log_debug("[PLC] Request sent: {}-{}, {} (invoke_id: {})",
+                  obj_type_name, read_req->object_instance, prop_name,
+                  invoke_id_to_string(invoke_id, invoke_buf, sizeof(invoke_buf)));
+    }
+    
     return rc;
 }
 

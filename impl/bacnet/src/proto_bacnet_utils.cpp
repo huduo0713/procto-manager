@@ -99,6 +99,8 @@ int bacnet_load_config_from_yaml(const char *yaml_path, bacnet_config_t *cfg)
     cfg->bacnet.services.read_timeout_ms = 6000;
     cfg->bacnet.services.write_timeout_ms = 6000;
     cfg->bacnet.services.default_priority = 8;
+    cfg->bacnet.services.cache_expiry_ms = 1000;     // 默认缓存1秒过期
+    cfg->bacnet.services.cache_strategy = 0;         // 默认激进策略(每次都发送)
 
     log_debug("[BACnet][Config] Configuration loaded with default values (target device: {}-{})",
               cfg->bacnet.discovery.target_device_start, cfg->bacnet.discovery.target_device_end);
@@ -141,6 +143,72 @@ void bacnet_data_value_free(bacnet_data_value_t *value)
 } // extern "C"
 
 namespace bacnet {
+
+/* -------------------------------------------------------------------------- */
+/* 状态转换函数（增强日志可读性）                                             */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * @brief 将连接状态转换为可读字符串
+ */
+const char* connection_state_to_string(bacnet_connection_state_t state)
+{
+    switch (state) {
+        case BACNET_CONN_IDLE:
+            return "IDLE";
+        case BACNET_CONN_CONNECTING:
+            return "CONNECTING";
+        case BACNET_CONN_CONNECTED:
+            return "CONNECTED";
+        case BACNET_CONN_DISCONNECTING:
+            return "DISCONNECTING";
+        case BACNET_CONN_DISCONNECTED:
+            return "DISCONNECTED";
+        default:
+            return "UNKNOWN";
+    }
+}
+
+/**
+ * @brief 将缓存策略转换为可读字符串
+ */
+const char* cache_strategy_to_string(CacheStrategy strategy)
+{
+    switch (strategy) {
+        case CacheStrategy::Aggressive:
+            return "Aggressive (always send requests)";
+        case CacheStrategy::Conservative:
+            return "Conservative (use unexpired cache)";
+        default:
+            return "Unknown";
+    }
+}
+
+/**
+ * @brief 检查 invoke_id 是否有效
+ */
+bool is_invoke_id_valid(uint8_t invoke_id)
+{
+    return invoke_id != 0xFF;  // 0xFF 表示无效
+}
+
+/**
+ * @brief 将 invoke_id 转换为可读字符串
+ */
+const char* invoke_id_to_string(uint8_t invoke_id, char *buffer, size_t buffer_size)
+{
+    if (!buffer || buffer_size == 0) {
+        return "";
+    }
+    
+    if (is_invoke_id_valid(invoke_id)) {
+        snprintf(buffer, buffer_size, "%u", invoke_id);
+    } else {
+        snprintf(buffer, buffer_size, "INVALID");
+    }
+    
+    return buffer;
+}
 
 /* -------------------------------------------------------------------------- */
 /* 应用数据值转换函数                                                         */

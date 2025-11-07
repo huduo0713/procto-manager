@@ -141,6 +141,7 @@ inline constexpr uint32_t kDefaultWriteTimeoutMs = 6000;
 inline constexpr uint32_t kDefaultDiscoveryTimeoutMs = 5000;
 inline constexpr int kMaxReconnectAttempts = 5;
 inline constexpr int kReconnectIntervalMs = 3000;
+inline constexpr uint32_t kDefaultCacheExpiryMs = 1000;  // 缓存过期时间，默认1秒
 
 /* -------------------------------------------------------------------------- */
 /* 操作类型枚举                                                               */
@@ -151,6 +152,44 @@ enum class OperationKind {
     Read,
     Write,
     Discovery
+};
+
+/* -------------------------------------------------------------------------- */
+/* 缓存策略枚举                                                               */
+/* -------------------------------------------------------------------------- */
+
+enum class CacheStrategy {
+    Aggressive = 0,  // 激进策略：每次都发送请求，尽可能获取最新数据
+    Conservative     // 保守策略：有缓存且未过期时直接返回缓存
+};
+
+/* -------------------------------------------------------------------------- */
+/* 对象键定义（用于缓存查找）                                                 */
+/* -------------------------------------------------------------------------- */
+
+struct ObjectKey {
+    uint32_t device_instance;
+    uint16_t object_type;
+    uint32_t object_instance;
+    uint32_t property_id;
+
+    bool operator==(const ObjectKey& other) const {
+        return device_instance == other.device_instance &&
+               object_type == other.object_type &&
+               object_instance == other.object_instance &&
+               property_id == other.property_id;
+    }
+};
+
+// ObjectKey 的哈希函数
+struct ObjectKeyHash {
+    std::size_t operator()(const ObjectKey& key) const {
+        std::size_t h1 = std::hash<uint32_t>()(key.device_instance);
+        std::size_t h2 = std::hash<uint16_t>()(key.object_type);
+        std::size_t h3 = std::hash<uint32_t>()(key.object_instance);
+        std::size_t h4 = std::hash<uint32_t>()(key.property_id);
+        return h1 ^ (h2 << 1) ^ (h3 << 2) ^ (h4 << 3);
+    }
 };
 
 /* -------------------------------------------------------------------------- */
@@ -221,19 +260,25 @@ public:
     BacnetContext& operator=(BacnetContext&&) noexcept = default;
 
 public:
-    // 哈希表队列定义（使用 invoke_id 作为 key）
-    struct ReadBufferItem {
-        uint32_t device_instance;
-        uint16_t object_type;
-        uint32_t object_instance;
-        uint32_t property_id;
-        bacnet_data_value_t value;
-        proto_status_t status;
-        bool is_completed;  // 是否已由回调函数完成
-        std::chrono::steady_clock::time_point timestamp;
-        bacnet_read_t *original_request;  // 原始请求指针，用于事件关联
-        uint8_t invoke_id;  // BACnet协议的调用ID，用于精确匹配
+    // 对象状态定义（用于缓存）
+    struct ObjectState {
+        bacnet_data_value_t cached_value;          // 缓存的值
+        proto_status_t status;                     // 最后一次操作的状态
+        uint8_t active_invoke_id;                  // 当前活跃的请求 invoke_id (0表示无活跃请求)
+        std::chrono::steady_clock::time_point timestamp;  // 缓存更新时间
+        bool has_valid_cache;                      // 是否有有效缓存
+        bacnet_read_t *original_request;           // 原始请求指针，用于事件关联
     };
+
+    // 主缓存表：对象 -> 状态
+    std::unordered_map<ObjectKey, ObjectState, ObjectKeyHash> object_states;
+    std::mutex object_states_mutex;
+
+    // 反向映射表：invoke_id -> ObjectKey（用于回调查找）
+    std::unordered_map<uint8_t, ObjectKey> invoke_id_to_key;
+    std::mutex invoke_id_to_key_mutex;
+
+    // 写操作队列（写操作不需要缓存，仍用 invoke_id 作为 key）
     struct WriteBufferItem {
         uint32_t device_instance;
         uint16_t object_type;
@@ -250,10 +295,6 @@ public:
         uint8_t invoke_id;  // BACnet协议的调用ID，用于精确匹配
     };
     
-    // 读写队列：使用哈希表存储，invoke_id 作为 key，实现 O(1) 查找和删除
-    std::unordered_map<uint8_t, ReadBufferItem> read_queue;
-    std::mutex read_queue_mutex;
-    
     std::unordered_map<uint8_t, WriteBufferItem> write_queue;
     std::mutex write_queue_mutex;
     std::condition_variable write_queue_cv;
@@ -267,6 +308,10 @@ public:
     bacnet_config_t config{};
     uint32_t target_device_start{0};     // 目标设备实例范围起始
     uint32_t target_device_end{0};       // 目标设备实例范围结束
+
+    // 缓存配置
+    CacheStrategy cache_strategy{CacheStrategy::Aggressive};  // 默认激进策略
+    uint32_t cache_expiry_ms{kDefaultCacheExpiryMs};          // 缓存过期时间
 
     // 连接状态（原子变量 - 无锁读写）
     std::atomic<bacnet_connection_state_t> connection_state{BACNET_CONN_IDLE};
@@ -336,6 +381,7 @@ void worker_loop_function(BacnetContext *context);
 void start_worker_thread(BacnetContext *context);
 void stop_worker_thread(BacnetContext *context);
 void check_and_reconnect_if_needed(BacnetContext *context);
+void cleanup_stale_requests(BacnetContext *context);
 
 /* -------------------------------------------------------------------------- */
 /* 读写操作函数声明（proto_bacnet_io.cpp）                                    */
@@ -366,6 +412,15 @@ void register_bacnet_handlers(BacnetContext *context);
 
 proto_status_t store_application_value(bacnet_read_t *req, const BACNET_APPLICATION_DATA_VALUE &value);
 bool convert_to_application_value(const bacnet_data_value_t &input, BACNET_APPLICATION_DATA_VALUE &output);
+
+/* -------------------------------------------------------------------------- */
+/* 状态转换函数（增强日志可读性）                                             */
+/* -------------------------------------------------------------------------- */
+
+const char* connection_state_to_string(bacnet_connection_state_t state);
+const char* cache_strategy_to_string(CacheStrategy strategy);
+bool is_invoke_id_valid(uint8_t invoke_id);
+const char* invoke_id_to_string(uint8_t invoke_id, char *buffer, size_t buffer_size);
 
 /* -------------------------------------------------------------------------- */
 /* 事件和状态管理函数                                                         */

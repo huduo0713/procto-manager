@@ -40,3 +40,5 @@ protocols:
       read_timeout_ms: 6000       # 读取操作等待确认的超时时间
       write_timeout_ms: 6000      # 写入操作等待确认的超时时间
       default_priority: 8         # 写属性时使用的默认优先级 (1-16, 0 表示不指定)
+      cache_expiry_ms: 1000       # 读缓存过期时间 (毫秒)
+      cache_strategy: 0           # 缓存策略: 0=激进(每次都发送请求), 1=保守(使用未过期缓存)
