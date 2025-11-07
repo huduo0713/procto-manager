@@ -543,4 +543,74 @@ bacnet_operation_state_t get_operation_state(BacnetContext *context);
 void set_callback(BacnetContext *context, const char* type, AsyncCallback callback, void* userdata);
 void trigger_callback(BacnetContext *context, const char* type, proto_status_t status);
 
+/* -------------------------------------------------------------------------- */
+/* 现代 C++ 驱动管理类（RAII）                                                */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * @brief BACnet 驱动管理器 - 使用现代 C++ RAII 模式
+ * 
+ * 设计特性：
+ * - RAII: 构造时初始化，析构时自动清理
+ * - 单例模式: 全局唯一实例
+ * - 异常安全: 使用 std::optional 和 std::unique_ptr
+ * - 线程安全: 内部使用 mutex 保护
+ */
+class BacnetDriver {
+public:
+    // 获取全局单例
+    static BacnetDriver& instance();
+    
+    // 禁止拷贝和移动
+    BacnetDriver(const BacnetDriver&) = delete;
+    BacnetDriver& operator=(const BacnetDriver&) = delete;
+    BacnetDriver(BacnetDriver&&) = delete;
+    BacnetDriver& operator=(BacnetDriver&&) = delete;
+    
+    // 初始化驱动（返回 proto_status_t）
+    int initialize(proto_ctx_t* ctx);
+    
+    // 释放驱动资源
+    void release();
+    
+    // 连接到 BACnet 网络
+    int connect();
+    
+    // 断开 BACnet 网络连接
+    void disconnect();
+    
+    // 读取操作
+    int read(bacnet_read_t* req);
+    
+    // 写入操作
+    int write(const bacnet_write_t* req);
+    
+    // 获取上下文指针（兼容旧代码）
+    BacnetContext* get_context() { return context_.get(); }
+    
+    // 检查是否已初始化
+    bool is_initialized() const { return context_ != nullptr; }
+    
+    // 获取配置
+    const bacnet_config_t* get_config() const;
+    
+    // 热重载配置
+    int reload_config();
+    
+private:
+    // 私有构造函数（单例模式）
+    BacnetDriver() = default;
+    ~BacnetDriver();
+    
+    // 上下文智能指针（RAII 自动管理）
+    std::unique_ptr<BacnetContext> context_;
+    
+    // 保护并发访问
+    mutable std::mutex mutex_;
+    
+    // 配置路径
+    std::string config_path_{bacnet::defaults::kConfigPath};
+};
+
 } // namespace bacnet
+

@@ -3,22 +3,16 @@
 namespace bacnet {
 
 /* -------------------------------------------------------------------------- */
-/* 全局上下文指针（用于C回调函数访问）                                         */
+/* 全局上下文指针（用于C回调函数访问）- 通过驱动单例获取                       */
 /* -------------------------------------------------------------------------- */
 
-BacnetContext *g_ctx = nullptr;
-
-/* -------------------------------------------------------------------------- */
-/* 辅助函数：获取上下文                                                        */
-/* -------------------------------------------------------------------------- */
-
-BacnetContext* get_context(proto_ctx_t *ctx)
+BacnetContext* get_global_context()
 {
-    if (!ctx || ctx->type != PROTO_TYPE_BACNET) {
-        return nullptr;
-    }
-    return static_cast<BacnetContext *>(ctx->userdata);
+    return BacnetDriver::instance().get_context();
 }
+
+// 兼容旧代码的全局指针（回调函数使用）
+BacnetContext *g_ctx = nullptr;
 
 /* -------------------------------------------------------------------------- */
 /* 状态管理函数                                                               */
@@ -371,165 +365,41 @@ void disconnect_device(BacnetContext *context)
 
 using namespace bacnet;
 
+/* PLC 全局状态管理 */
+static std::mutex g_plc_mutex;
+
 extern "C" {
 
-/* -------------------------------------------------------------------------- */
-/* 初始化驱动                                                                 */
-/* -------------------------------------------------------------------------- */
-
-int proto_driver_init(proto_ctx_t *ctx)
-{
-    if (!ctx || ctx->type != PROTO_TYPE_BACNET) {
-        return PROTO_ERROR_UNSUPPORTED;
-    }
-
-    // 检查是否已经初始化
-    if (ctx->userdata != nullptr) {
-        log_warn("[BACnet] Driver already initialized");
-        return PROTO_SUCCESS;
-    }
-
-    // 创建BACnet上下文（使用new，后续用delete释放）
-    auto *context = new BacnetContext();
-    context->ctx = ctx;
-
-    // 初始化上下文
-    proto_status_t status = initialize_context(context);
-    if (status != PROTO_SUCCESS) {
-        delete context;
-        return status;
-    }
-
-    // 设置上下文指针
-    ctx->userdata = context;
-    ctx->config = &context->config;
-    g_ctx = context;
-
-    log_info("[BACnet] Driver initialized successfully");
-    return PROTO_SUCCESS;
-}
+/* 读写属性的实现在 proto_bacnet_io.cpp 中 */
 
 /* -------------------------------------------------------------------------- */
-/* 释放驱动资源                                                               */
+/* PLC接口：辅助函数（初始化和连接管理）                                      */
 /* -------------------------------------------------------------------------- */
-
-void proto_driver_release(proto_ctx_t *ctx)
-{
-    BacnetContext *context = get_context(ctx);
-    if (!context) {
-        return;
-    }
-
-    log_info("[BACnet] Releasing driver...");
-
-    // 清理上下文
-    cleanup_context(context);
-
-    // 清除指针
-    ctx->userdata = nullptr;
-    ctx->config = nullptr;
-    g_ctx = nullptr;
-
-    // 释放内存
-    delete context;
-
-    log_info("[BACnet] Driver released successfully");
-}
-
-/* -------------------------------------------------------------------------- */
-/* 连接设备                                                                   */
-/* -------------------------------------------------------------------------- */
-
-int proto_connect(proto_ctx_t *ctx)
-{
-    BacnetContext *context = get_context(ctx);
-    if (!context) {
-        return PROTO_ERROR_UNSUPPORTED;
-    }
-
-    return connect_device(context);
-}
-
-/* -------------------------------------------------------------------------- */
-/* 断开连接                                                                   */
-/* -------------------------------------------------------------------------- */
-
-void proto_disconnect(proto_ctx_t *ctx)
-{
-    BacnetContext *context = get_context(ctx);
-    if (!context) {
-        return;
-    }
-
-    disconnect_device(context);
-}
-
-/* -------------------------------------------------------------------------- */
-/* 读取属性                                                                   */
-/* -------------------------------------------------------------------------- */
-
-int bacnet_proto_read(proto_ctx_t *ctx, bacnet_read_t *req)
-{
-    BacnetContext *context = get_context(ctx);
-    if (!context) {
-        return PROTO_ERROR_UNSUPPORTED;
-    }
-
-    uint8_t invoke_id = 0;
-    return execute_read_property(context, req, &invoke_id);
-}
-
-/* -------------------------------------------------------------------------- */
-/* 写入属性                                                                   */
-/* -------------------------------------------------------------------------- */
-
-int bacnet_proto_write(proto_ctx_t *ctx, const bacnet_write_t *req)
-{
-    BacnetContext *context = get_context(ctx);
-    if (!context) {
-        return PROTO_ERROR_UNSUPPORTED;
-    }
-
-    uint8_t invoke_id = 0;
-    return execute_write_property(context, req, &invoke_id);
-}
-
-/* -------------------------------------------------------------------------- */
-/* 事件轮询接口                                                               */
-/* -------------------------------------------------------------------------- */
-
-/* -------------------------------------------------------------------------- */
-/* PLC接口：读取                                                              */
-/* -------------------------------------------------------------------------- */
-
-static std::mutex g_plc_mutex;
-static bool g_plc_initialized = false;
-static proto_ctx_t g_plc_ctx{PROTO_TYPE_BACNET, nullptr, nullptr, nullptr};
 
 static int ensure_init_and_connect_locked()
 {
-    log_debug("[PLC] ensure_init_and_connect_locked called, g_plc_initialized={}", g_plc_initialized);
+    auto& driver = bacnet::BacnetDriver::instance();
     
-    if (!g_plc_initialized) {
+    // 初始化驱动（如果未初始化）
+    if (!driver.is_initialized()) {
         log_info("[PLC] Initializing BACnet driver...");
-        int rc = proto_driver_init(&g_plc_ctx);
+        proto_ctx_t ctx{PROTO_TYPE_BACNET, nullptr, nullptr, nullptr};
+        int rc = driver.initialize(&ctx);
         if (rc != PROTO_SUCCESS) {
             log_error("[PLC] Driver initialization failed: {}", rc);
             return rc;
         }
-        g_plc_initialized = true;
         log_info("[PLC] Driver initialized successfully");
-        
-        // 不启动热配置监控线程，改用信号触发
-        log_info("[BACnet] Driver initialized, use bacnet_reload_config() to reload");
     }
-
-    BacnetContext *context = get_context(&g_plc_ctx);
+    
+    // 获取上下文
+    BacnetContext *context = driver.get_context();
     if (!context) {
         log_error("[PLC] Failed to get context");
         return PROTO_ERROR_INIT;
     }
-
+    
+    // 检查连接状态
     bacnet_connection_state_t conn_state = get_connection_state(context);
     log_debug("[PLC] Current connection state: {} ({})", 
               static_cast<int>(conn_state), 
@@ -537,14 +407,14 @@ static int ensure_init_and_connect_locked()
     
     if (conn_state != BACNET_CONN_CONNECTED) {
         log_info("[PLC] Connecting to device...");
-        int rc = proto_connect(&g_plc_ctx);
+        int rc = driver.connect();
         if (rc != PROTO_SUCCESS) {
             log_error("[PLC] Connection failed: {}", rc);
             return rc;
         }
         log_info("[PLC] Connected successfully");
     }
-
+    
     return PROTO_SUCCESS;
 }
 
@@ -574,7 +444,9 @@ int plc_proto_read(void *req)
         return rc;
     }
 
-    BacnetContext *context = get_context(&g_plc_ctx);
+    // 使用驱动单例获取上下文
+    auto& driver = bacnet::BacnetDriver::instance();
+    BacnetContext *context = driver.get_context();
     if (!context) {
         log_error("[PLC] Failed to get context in plc_proto_read");
         return PROTO_ERROR_INIT;
@@ -672,7 +544,9 @@ int plc_proto_write(void *req)
         return rc;
     }
 
-    BacnetContext *context = get_context(&g_plc_ctx);
+    // 使用驱动单例获取上下文
+    auto& driver = bacnet::BacnetDriver::instance();
+    BacnetContext *context = driver.get_context();
     if (!context) {
         return PROTO_ERROR_INIT;
     }
@@ -699,12 +573,17 @@ int bacnet_reload_config(void)
     
     log_info("[BACnet] Config reload triggered by signal");
     
-    if (g_plc_initialized) {
-        proto_driver_release(&g_plc_ctx);
-        g_plc_initialized = false;
+    // 使用驱动单例重载配置
+    auto& driver = bacnet::BacnetDriver::instance();
+    
+    if (driver.is_initialized()) {
+        log_info("[BACnet] Releasing current driver for config reload...");
+        driver.release();
     }
     
-    // 下次调用 plc_proto_read/write 时会自动重新初始化
+    // 下次调用 plc_proto_read/write 时会自动重新初始化并加载新配置
+    log_info("[BACnet] Driver will be reinitialized on next request");
+    
     return PROTO_SUCCESS;
 }
 

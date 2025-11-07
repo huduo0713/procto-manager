@@ -239,21 +239,7 @@ int plc_proto_read(void *req);
 int plc_proto_write(void *req);
 
 /* -------------------------------------------------------------------------- */
-/* 内部使用接口（不建议外部直接调用，仅供测试和调试）                          */
-/* -------------------------------------------------------------------------- */
-
-// 内部驱动接口（由 plc_proto_read/write 自动调用）
-int  proto_driver_init(proto_ctx_t *ctx);
-void proto_driver_release(proto_ctx_t *ctx);
-int  proto_connect(proto_ctx_t *ctx);
-void proto_disconnect(proto_ctx_t *ctx);
-
-// 内部读写接口（由 plc_proto_read/write 自动调用）
-int bacnet_proto_read(proto_ctx_t *ctx, bacnet_read_t *req);
-int bacnet_proto_write(proto_ctx_t *ctx, const bacnet_write_t *req);
-
-/* -------------------------------------------------------------------------- */
-/* 热配置管理接口（通过信号触发，不使用监控线程）                             */
+/* 配置管理接口                                                               */
 /* -------------------------------------------------------------------------- */
 
 /**
@@ -262,11 +248,15 @@ int bacnet_proto_write(proto_ctx_t *ctx, const bacnet_write_t *req);
  * 
  * 说明：
  * 1. 由外部信号处理函数调用（如 SIGUSR1）
- * 2. 重新加载配置文件
- * 3. 重新初始化驱动
+ * 2. 释放当前驱动并清空状态
+ * 3. 下次调用 plc_proto_read/write 时自动重新加载配置
  * 4. 不使用额外的监控线程
  */
 int bacnet_reload_config(void);
+
+/* -------------------------------------------------------------------------- */
+/* 工具函数                                                                   */
+/* -------------------------------------------------------------------------- */
 
 /**
  * @brief 释放 bacnet_data_value_t 中动态分配的内存
