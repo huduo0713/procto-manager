@@ -51,7 +51,13 @@ typedef struct {
     uint8_t  default_priority;          /* WriteProperty 默认优先级 (0 表示未指定) */
     uint32_t cache_expiry_ms;           /* 读缓存过期时间 (毫秒，默认 1000) */
     uint8_t  cache_strategy;            /* 缓存策略: 0=激进(每次都发), 1=保守(用缓存) */
+    uint32_t datalink_maintenance_ms;   /* DataLink维护定时器间隔 (毫秒，默认 1000) */
 } bacnet_service_config_t;
+
+typedef struct {
+    uint8_t  max_reconnect_attempts;    /* 最大重连次数 (默认 5) */
+    uint32_t reconnect_interval_ms;     /* 重连间隔 (毫秒，默认 3000) */
+} bacnet_connection_config_t;
 
 typedef struct {
     bool                         enabled;      /* 是否启用 BACnet 协议栈 */
@@ -59,6 +65,7 @@ typedef struct {
     bacnet_local_device_config_t local_device; /* 本地设备参数 */
     bacnet_network_config_t      network;      /* 网络层配置 */
     bacnet_service_config_t      services;     /* 服务行为配置 */
+    bacnet_connection_config_t   connection;   /* 连接管理配置 */
 } bacnet_protocol_config_t;
 
 typedef struct {
@@ -103,65 +110,60 @@ typedef struct {
 } bacnet_data_value_t;
 
 typedef struct {
-    uint32_t            device_instance;   /* 目标设备实例 */
-    uint16_t            object_type;       /* 对象类型 */
-    uint32_t            object_instance;   /* 对象实例 */
-    uint32_t            property_id;       /* 属性 ID */
-    int32_t             array_index;       /* 属性数组索引，-1 表示未使用 */
-    uint32_t            timeout_ms;        /* 操作超时 */
-    bacnet_data_value_t *value;            /* 输出值缓冲区 */
-    bool                check_only;        /* 是否仅检查队列而不发送新请求 */
+    uint32_t            device_instance;   /* 目标设备实例 (必填) */
+    uint16_t            object_type;       /* 对象类型 (必填) */
+    uint32_t            object_instance;   /* 对象实例 (必填) */
+    uint32_t            property_id;       /* 属性 ID (必填) */
+    bacnet_data_value_t *value;            /* 输出值缓冲区 (必填) */
+    
+    /* 以下为可选字段，不填写则使用默认值 */
+    int32_t             array_index;       /* 属性数组索引，-1 表示整个数组 (默认: -1) */
+    uint32_t            timeout_ms;        /* 操作超时，0表示使用配置文件默认值 (默认: 0=使用配置) */
+    bool                check_only;        /* 是否仅检查队列而不发送新请求 (默认: false) */
     uint8_t             invoke_id;         /* 输出：BACnet调用ID，用于匹配响应 */
 } bacnet_read_t;
 
+/* 便捷初始化宏：只需填写四元组 + value缓冲区 */
+#define BACNET_READ_INIT(dev, obj_type, obj_inst, prop, val_ptr) \
+    { \
+        .device_instance = (dev), \
+        .object_type = (obj_type), \
+        .object_instance = (obj_inst), \
+        .property_id = (prop), \
+        .value = (val_ptr), \
+        .array_index = -1, \
+        .timeout_ms = 0, \
+        .check_only = false, \
+        .invoke_id = 0 \
+    }
+
 typedef struct {
-    uint32_t           device_instance;
-    uint16_t           object_type;
-    uint32_t           object_instance;
-    uint32_t           property_id;
-    int32_t            array_index;
-    uint8_t            priority;           /* 写入优先级，0 表示使用默认 */
-    uint32_t           timeout_ms;
-    bacnet_data_value_t value;             /* 写入值 */
+    uint32_t           device_instance;    /* 目标设备实例 (必填) */
+    uint16_t           object_type;        /* 对象类型 (必填) */
+    uint32_t           object_instance;    /* 对象实例 (必填) */
+    uint32_t           property_id;        /* 属性 ID (必填) */
+    bacnet_data_value_t value;             /* 写入值 (必填) */
+    
+    /* 以下为可选字段，不填写则使用默认值 */
+    int32_t            array_index;        /* 属性数组索引，-1 表示整个数组 (默认: -1) */
+    uint8_t            priority;           /* 写入优先级，0 表示使用配置默认值 (默认: 0=使用配置) */
+    uint32_t           timeout_ms;         /* 操作超时，0表示使用配置文件默认值 (默认: 0=使用配置) */
     uint8_t            invoke_id;          /* 输出：BACnet调用ID，用于匹配响应 */
 } bacnet_write_t;
 
-/* -------------------------------------------------------------------------- */
-/* 事件类型定义                                                               */
-/* -------------------------------------------------------------------------- */
-
-typedef enum {
-    BACNET_EVENT_NONE = 0,           /* 无事件 */
-    BACNET_EVENT_READ_COMPLETE,      /* 读取完成 */
-    BACNET_EVENT_WRITE_COMPLETE,     /* 写入完成 */
-    BACNET_EVENT_DEVICE_DISCOVERED,  /* 设备发现 */
-    BACNET_EVENT_ERROR               /* 错误事件 */
-} bacnet_event_type_t;
-
-/* -------------------------------------------------------------------------- */
-/* 事件结构体定义                                                             */
-/* -------------------------------------------------------------------------- */
-
-typedef struct {
-    bacnet_event_type_t type;        /* 事件类型 */
-    proto_status_t status;           /* 操作状态 */
-    uint8_t invoke_id;               /* BACnet调用ID，用于精确匹配 */
-    union {
-        struct {
-            uint32_t device_instance;
-            uint16_t object_type;
-            uint32_t object_instance;
-            uint32_t property_id;
-            bacnet_data_value_t value;  /* 读取结果 */
-        } read_complete;
-        struct {
-            uint32_t device_instance;
-            uint16_t object_type;
-            uint32_t object_instance;
-            uint32_t property_id;
-        } write_complete;
-    } data;
-} bacnet_event_t;
+/* 便捷初始化宏：只需填写四元组 + value */
+#define BACNET_WRITE_INIT(dev, obj_type, obj_inst, prop, val) \
+    { \
+        .device_instance = (dev), \
+        .object_type = (obj_type), \
+        .object_instance = (obj_inst), \
+        .property_id = (prop), \
+        .value = (val), \
+        .array_index = -1, \
+        .priority = 0, \
+        .timeout_ms = 0, \
+        .invoke_id = 0 \
+    }
 
 /* -------------------------------------------------------------------------- */
 /* 状态机定义                                                                 */
@@ -249,31 +251,6 @@ void proto_disconnect(proto_ctx_t *ctx);
 // 内部读写接口（由 plc_proto_read/write 自动调用）
 int bacnet_proto_read(proto_ctx_t *ctx, bacnet_read_t *req);
 int bacnet_proto_write(proto_ctx_t *ctx, const bacnet_write_t *req);
-
-/* -------------------------------------------------------------------------- */
-/* 事件轮询接口                                                               */
-/* -------------------------------------------------------------------------- */
-
-/**
- * @brief 轮询等待异步操作结果
- * @param event 输出事件结构体指针
- * @param timeout_ms 等待超时时间 (0=非阻塞)
- * @return PROTO_SUCCESS 有事件，PROTO_TIMEOUT 超时，其他值为错误码
- * 
- * 功能：
- * 1. 轮询事件队列
- * 2. 返回最早的未处理事件
- * 3. 支持阻塞和非阻塞模式
- * 4. 超时控制
- * 
- * 使用方式：
- *   bacnet_event_t event;
- *   int ret = bacnet_poll_event(&event, 1000);  // 等待1秒
- *   if (ret == PROTO_SUCCESS) {
- *       // 处理事件
- *   }
- */
-int bacnet_poll_event(bacnet_event_t *event, uint32_t timeout_ms);
 
 /* -------------------------------------------------------------------------- */
 /* 热配置管理接口（通过信号触发，不使用监控线程）                             */

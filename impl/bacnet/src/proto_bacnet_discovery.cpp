@@ -29,11 +29,16 @@ proto_status_t discover_target_device(BacnetContext *context)
     mstimer datalink_timer{};
     uint32_t timeout_ms = context->config.bacnet.discovery.response_timeout_ms;
     if (timeout_ms == 0) {
-        timeout_ms = kDefaultDiscoveryTimeoutMs;
+        timeout_ms = bacnet::defaults::kDiscoveryTimeoutMs;
+    }
+
+    uint32_t datalink_timer_ms = context->config.bacnet.services.datalink_maintenance_ms;
+    if (datalink_timer_ms == 0) {
+        datalink_timer_ms = bacnet::defaults::kDatalinkMaintenanceMs;
     }
 
     mstimer_set(&apdu_timer, timeout_ms);
-    mstimer_set(&datalink_timer, 1000);
+    mstimer_set(&datalink_timer, datalink_timer_ms);
 
     // 获取广播地址
     BACNET_ADDRESS dest{};
@@ -208,23 +213,26 @@ void check_and_reconnect_if_needed(BacnetContext *context)
     }
 
     int attempts = context->reconnect_attempts.load(std::memory_order_acquire);
+    uint8_t max_attempts = context->config.bacnet.connection.max_reconnect_attempts;
+    uint32_t base_interval_ms = context->config.bacnet.connection.reconnect_interval_ms;
     
     // 检查是否达到最大重连次数
-    if (attempts >= kMaxReconnectAttempts) {
+    if (attempts >= max_attempts) {
         return;
     }
 
-    // 指数退避策略：等待时间 = 2^attempts * 5秒，最大60秒
+    // 指数退避策略：基于配置的重连间隔计算
     static time_t last_reconnect_attempt = 0;
     time_t current_time = time(nullptr);
     
-    int backoff_seconds = (std::min)(60, static_cast<int>(5 * (1 << attempts)));
+    // 退避时间 = base_interval * 2^attempts (毫秒转秒)，最大60秒
+    int backoff_seconds = (std::min)(60, static_cast<int>((base_interval_ms / 1000) * (1 << attempts)));
     if (current_time - last_reconnect_attempt < backoff_seconds) {
         return; // 还未到重连时间
     }
 
     log_info("[BACnet] Attempting automatic reconnection (attempt {}/{}, backoff: {}s)",
-             attempts + 1, kMaxReconnectAttempts, backoff_seconds);
+             attempts + 1, max_attempts, backoff_seconds);
     
     last_reconnect_attempt = current_time;
     
@@ -241,7 +249,8 @@ void check_and_reconnect_if_needed(BacnetContext *context)
     } else {
         context->reconnect_attempts.fetch_add(1, std::memory_order_acq_rel);
         
-        if (context->reconnect_attempts.load(std::memory_order_acquire) >= kMaxReconnectAttempts) {
+        if (context->reconnect_attempts.load(std::memory_order_acquire) >= 
+            context->config.bacnet.connection.max_reconnect_attempts) {
             log_error("[BACnet] Maximum reconnection attempts reached, giving up");
             trigger_callback(context, "reconnect", PROTO_ERROR_CONNECT);
         }

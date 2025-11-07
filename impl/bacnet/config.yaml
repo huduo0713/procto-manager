@@ -42,3 +42,9 @@ protocols:
       default_priority: 8         # 写属性时使用的默认优先级 (1-16, 0 表示不指定)
       cache_expiry_ms: 1000       # 读缓存过期时间 (毫秒)
       cache_strategy: 0           # 缓存策略: 0=激进(每次都发送请求), 1=保守(使用未过期缓存)
+      datalink_maintenance_ms: 1000  # DataLink维护定时器间隔 (毫秒)
+
+    # 连接管理配置
+    connection:
+      max_reconnect_attempts: 5   # 最大重连次数
+      reconnect_interval_ms: 3000 # 重连间隔 (毫秒)

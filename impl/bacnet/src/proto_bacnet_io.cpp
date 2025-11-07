@@ -81,7 +81,7 @@ proto_status_t execute_read_property(BacnetContext *context, bacnet_read_t *req,
         context->active_operation.timeout_ms = req->timeout_ms ? req->timeout_ms : 
                                                 context->config.bacnet.services.read_timeout_ms;
         if (context->active_operation.timeout_ms == 0) {
-            context->active_operation.timeout_ms = kDefaultReadTimeoutMs;
+            context->active_operation.timeout_ms = bacnet::defaults::kReadTimeoutMs;
         }
 
         // 发送ReadProperty请求
@@ -184,7 +184,7 @@ proto_status_t execute_write_property(BacnetContext *context, const bacnet_write
         context->active_operation.timeout_ms = req->timeout_ms ? req->timeout_ms : 
                                                 context->config.bacnet.services.write_timeout_ms;
         if (context->active_operation.timeout_ms == 0) {
-            context->active_operation.timeout_ms = kDefaultWriteTimeoutMs;
+            context->active_operation.timeout_ms = bacnet::defaults::kWriteTimeoutMs;
         }
 
         // 确定写入优先级

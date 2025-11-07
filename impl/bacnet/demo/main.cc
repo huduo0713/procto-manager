@@ -19,15 +19,15 @@ int main() {
     // --- 读取操作测试 ---
     printf("\n--- 测试读取操作 ---\n");
 
-    // 准备读取请求
+    // 准备读取请求（字段顺序必须与结构体定义一致）
     bacnet_read_t read_req = {
         .device_instance = 5678,      // 目标设备实例ID
         .object_type = 2,             // OBJECT_ANALOG_VALUE = 2
         .object_instance = 1,         // 对象实例 1
         .property_id = 85,            // PROP_PRESENT_VALUE = 85
+        .value = nullptr,             // 稍后分配（必须在 array_index 之前）
         .array_index = -1,            // 不使用数组索引
         .timeout_ms = 6000,           // 6秒超时
-        .value = nullptr,             // 稍后分配
         .check_only = false           // 默认发送请求
     };
 
@@ -98,19 +98,19 @@ int main() {
     // --- 写入操作测试 ---
     printf("\n--- 测试写入操作 ---\n");
 
-    // 准备写入请求
+    // 准备写入请求（字段顺序必须与结构体定义一致）
     bacnet_write_t write_req = {
         .device_instance = 5678,      // 目标设备实例ID
         .object_type = 2,             // OBJECT_ANALOG_VALUE = 2
         .object_instance = 1,         // 对象实例 1
         .property_id = 85,            // PROP_PRESENT_VALUE = 85
-        .array_index = -1,            // 不使用数组索引
-        .priority = 8,                // 默认优先级
-        .timeout_ms = 6000,           // 6秒超时
-        .value = {
+        .value = {                    // 写入值（必须在 array_index 之前）
             .type = BACNET_DATA_REAL,
             .value = {.real_value = 25.5f}  // 写入25.5
-        }
+        },
+        .array_index = -1,            // 不使用数组索引
+        .priority = 8,                // 默认优先级
+        .timeout_ms = 6000            // 6秒超时
     };
 
     printf("正在写入设备 %u 的模拟值对象 1 的当前值: %.1f\n",

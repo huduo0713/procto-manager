@@ -171,11 +171,11 @@ proto_status_t initialize_context(BacnetContext *context)
         return PROTO_ERROR_PARAM;
     }
 
-    log_debug("[BACnet] Loading configuration from {}", kDefaultConfigPath);
+    log_debug("[BACnet] Loading configuration from {}", bacnet::defaults::kConfigPath);
     // 加载配置
-    int rc = bacnet_load_config_from_yaml(kDefaultConfigPath, &context->config);
+    int rc = bacnet_load_config_from_yaml(bacnet::defaults::kConfigPath, &context->config);
     if (rc != 0) {
-        log_error("[BACnet] Failed to load config from {} (rc={})", kDefaultConfigPath, rc);
+        log_error("[BACnet] Failed to load config from {} (rc={})", bacnet::defaults::kConfigPath, rc);
         return PROTO_ERROR_INIT;
     }
     log_debug("[BACnet] Configuration loaded successfully");
@@ -295,10 +295,11 @@ proto_status_t connect_device(BacnetContext *context)
         
         // 检查是否需要重连
         int attempts = context->reconnect_attempts.load(std::memory_order_acquire);
-        if (attempts < kMaxReconnectAttempts) {
+        uint8_t max_attempts = context->config.bacnet.connection.max_reconnect_attempts;
+        if (attempts < max_attempts) {
             context->reconnect_attempts.fetch_add(1, std::memory_order_acq_rel);
             log_info("[BACnet] Will retry connection (attempt {}/{})", 
-                     attempts + 1, kMaxReconnectAttempts);
+                     attempts + 1, max_attempts);
         } else {
             log_error("[BACnet] Maximum reconnection attempts reached");
             trigger_callback(context, "connect", PROTO_ERROR_CONNECT);

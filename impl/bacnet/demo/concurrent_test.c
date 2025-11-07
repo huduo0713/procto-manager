@@ -32,17 +32,16 @@ void test_concurrent_reads() {
 
     printf("📡 第1轮：批量提交 %d 个读请求...\n", NUM_OBJECTS);
 
-    // 第1轮：提交所有请求
+    // 第1轮：提交所有请求（使用简化的初始化方式）
     for (int i = 0; i < NUM_OBJECTS; i++) {
-        bacnet_read_t read_req = {
-            .device_instance = 5678,
-            .object_type = objects[i].object_type,
-            .object_instance = objects[i].object_instance,
-            .property_id = PROP_PRESENT_VALUE,
-            .array_index = -1,
-            .timeout_ms = 5000,
-            .value = &values[i]
-        };
+        // ✨ 新API：只需填写四元组 + value缓冲区，其他使用默认值
+        bacnet_read_t read_req = BACNET_READ_INIT(
+            5678,                      // 设备实例
+            objects[i].object_type,    // 对象类型
+            objects[i].object_instance,// 对象实例
+            PROP_PRESENT_VALUE,        // 属性ID
+            &values[i]                 // value缓冲区
+        );
 
         int result = plc_proto_read(&read_req);
         if (result == PROTO_SUCCESS) {
@@ -62,15 +61,14 @@ void test_concurrent_reads() {
     // 第2轮：检查结果
     int success_count = 0;
     for (int i = 0; i < NUM_OBJECTS; i++) {
-        bacnet_read_t read_req = {
-            .device_instance = 5678,
-            .object_type = objects[i].object_type,
-            .object_instance = objects[i].object_instance,
-            .property_id = PROP_PRESENT_VALUE,
-            .array_index = -1,
-            .timeout_ms = 5000,
-            .value = &values[i]
-        };
+        // ✨ 新API：只需填写四元组 + value缓冲区
+        bacnet_read_t read_req = BACNET_READ_INIT(
+            5678,
+            objects[i].object_type,
+            objects[i].object_instance,
+            PROP_PRESENT_VALUE,
+            &values[i]
+        );
 
         int result = plc_proto_read(&read_req);
         if (result == PROTO_SUCCESS) {
@@ -125,15 +123,14 @@ void test_repeated_reads() {
     for (int i = 0; i < NUM_READS; i++) {
         printf("[第 %d 次读取]\n", i + 1);
 
-        bacnet_read_t read_req = {
-            .device_instance = 5678,
-            .object_type = OBJECT_ANALOG_INPUT,
-            .object_instance = 1,
-            .property_id = PROP_PRESENT_VALUE,
-            .array_index = -1,
-            .timeout_ms = 5000,
-            .value = &value
-        };
+        // ✨ 新API：只需填写四元组 + value缓冲区
+        bacnet_read_t read_req = BACNET_READ_INIT(
+            5678,
+            OBJECT_ANALOG_INPUT,
+            1,
+            PROP_PRESENT_VALUE,
+            &value
+        );
 
         int result = plc_proto_read(&read_req);
         if (result == PROTO_SUCCESS) {
@@ -189,16 +186,14 @@ void test_concurrent_writes() {
     printf("📝 批量提交 %d 个写请求...\n", NUM_WRITES);
 
     for (int i = 0; i < NUM_WRITES; i++) {
-        bacnet_write_t write_req = {
-            .device_instance = 5678,
-            .object_type = writes[i].object_type,
-            .object_instance = writes[i].object_instance,
-            .property_id = PROP_PRESENT_VALUE,
-            .array_index = -1,
-            .priority = 8,
-            .timeout_ms = 5000,
-            .value = writes[i].value
-        };
+        // ✨ 新API：只需填写四元组 + value
+        bacnet_write_t write_req = BACNET_WRITE_INIT(
+            5678,
+            writes[i].object_type,
+            writes[i].object_instance,
+            PROP_PRESENT_VALUE,
+            writes[i].value
+        );
 
         int result = plc_proto_write(&write_req);
         if (result == PROTO_SUCCESS) {
@@ -241,15 +236,14 @@ void test_plc_polling() {
     for (int i = 0; i < POLL_COUNT; i++) {
         printf("[轮询 #%d] ", i + 1);
 
-        bacnet_read_t read_req = {
-            .device_instance = 5678,
-            .object_type = OBJECT_ANALOG_INPUT,
-            .object_instance = 1,
-            .property_id = PROP_PRESENT_VALUE,
-            .array_index = -1,
-            .timeout_ms = 5000,
-            .value = &value
-        };
+        // ✨ 新API：只需填写四元组 + value缓冲区
+        bacnet_read_t read_req = BACNET_READ_INIT(
+            5678,
+            OBJECT_ANALOG_INPUT,
+            1,
+            PROP_PRESENT_VALUE,
+            &value
+        );
 
         int result = plc_proto_read(&read_req);
         if (result == PROTO_SUCCESS) {

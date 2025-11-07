@@ -1,4 +1,4 @@
-# 🚀 BACnet 协议驱动 - 完整指南
+﻿# 🚀 BACnet 协议驱动 - 完整指南
 
 ## 📚 目录
 
@@ -378,15 +378,34 @@ int plc_proto_read(void *req);
 **读取请求结构体**：
 ```c
 typedef struct {
+    // ✅ 必填字段 (5个)
     uint32_t device_instance;      // 🎯 目标设备实例ID
     uint16_t object_type;          // 📦 对象类型 (如 OBJECT_ANALOG_INPUT)
     uint32_t object_instance;      // 🔢 对象实例号
     uint32_t property_id;          // 🏷️ 属性ID (如 PROP_PRESENT_VALUE)
-    int32_t array_index;           // 📊 数组索引 (-1表示非数组)
-    uint32_t timeout_ms;           // ⏱️ 超时时间 (毫秒)
     bacnet_data_value_t *value;    // 📥 输出缓冲区
-    bool check_only;               // 🔍 是否仅检查队列 (新增)
+    
+    // ⚙️ 可选字段 (使用默认值)
+    int32_t array_index;           // 📊 数组索引 (默认: -1 = 整个数组)
+    uint32_t timeout_ms;           // ⏱️ 超时时间 (默认: 0 = 使用配置文件)
+    bool check_only;               // 🔍 是否仅检查队列 (默认: false)
 } bacnet_read_t;
+```
+
+**✨ 简化API - 使用便捷宏**：
+```c
+// 只需填写 5 个核心参数，其他使用默认值
+bacnet_read_t req = BACNET_READ_INIT(
+    5678,                     // 设备实例
+    OBJECT_ANALOG_INPUT,      // 对象类型
+    1,                        // 对象实例
+    PROP_PRESENT_VALUE,       // 属性ID
+    &value                    // value缓冲区
+);
+plc_proto_read(&req);
+
+// 代码对比：
+// 旧方式 (9行)        vs    新方式 (7行)    减少 22%！
 ```
 
 #### `plc_proto_write()` - 异步写入 ✏️
@@ -407,15 +426,39 @@ int plc_proto_write(void *req);
 **写入请求结构体**：
 ```c
 typedef struct {
+    // ✅ 必填字段 (5个)
     uint32_t device_instance;      // 🎯 目标设备实例ID
     uint16_t object_type;          // 📦 对象类型
     uint32_t object_instance;      // 🔢 对象实例号
     uint32_t property_id;          // 🏷️ 属性ID
-    int32_t array_index;           // 📊 数组索引
-    uint8_t priority;              // ⭐ 写入优先级 (1-16)
-    uint32_t timeout_ms;           // ⏱️ 超时时间
     bacnet_data_value_t value;     // 📤 写入值
+    
+    // ⚙️ 可选字段 (使用默认值)
+    int32_t array_index;           // 📊 数组索引 (默认: -1 = 整个数组)
+    uint8_t priority;              // ⭐ 写入优先级 (默认: 0 = 使用配置文件)
+    uint32_t timeout_ms;           // ⏱️ 超时时间 (默认: 0 = 使用配置文件)
 } bacnet_write_t;
+```
+
+**✨ 简化API - 使用便捷宏**：
+```c
+// 只需填写 5 个核心参数，其他使用默认值
+bacnet_data_value_t val = {
+    .type = BACNET_DATA_REAL,
+    .value.real_value = 25.5f
+};
+
+bacnet_write_t req = BACNET_WRITE_INIT(
+    5678,                     // 设备实例
+    OBJECT_ANALOG_OUTPUT,     // 对象类型
+    1,                        // 对象实例
+    PROP_PRESENT_VALUE,       // 属性ID
+    val                       // value
+);
+plc_proto_write(&req);
+
+// 代码对比：
+// 旧方式 (14行)       vs    新方式 (11行)   减少 21%！
 ```
 
 ### 🎪 高级接口
@@ -488,9 +531,42 @@ bacnet:
     broadcast_address: 255.255.255.255  # 📡 广播地址
   
   services:
-    read_timeout_ms: 6000          # ⏱️ 读取操作超时
-    write_timeout_ms: 6000         # ⏱️ 写入操作超时
-    default_priority: 16           # ⭐ 默认写入优先级
+    read_timeout_ms: 6000          # ⏱️ 读取操作超时 (API中timeout_ms=0时使用此值)
+    write_timeout_ms: 6000         # ⏱️ 写入操作超时 (API中timeout_ms=0时使用此值)
+    default_priority: 8            # ⭐ 默认写入优先级 (API中priority=0时使用此值)
+    cache_expiry_ms: 1000          # 💾 缓存过期时间 (毫秒)
+    cache_strategy: 0              # 📊 缓存策略 (0=激进,每次都发送; 1=保守,使用未过期缓存)
+```
+
+**💡 默认值说明**：
+- 当 API 中 `timeout_ms = 0` 时，自动使用配置文件中的 `read_timeout_ms` 或 `write_timeout_ms`
+- 当 API 中 `priority = 0` 时，自动使用配置文件中的 `default_priority`
+- 当 API 中 `array_index` 不填写时，默认为 `-1` (读取整个数组)
+
+**🎯 推荐做法**：
+1. ✅ 在配置文件中设置合理的全局默认值
+2. ✅ API调用时使用便捷宏 `BACNET_READ_INIT()` / `BACNET_WRITE_INIT()`
+3. ✅ 只在特殊场景才手动覆盖默认值
+
+**示例对比**：
+```c
+// ❌ 不推荐：每次都手动配置
+bacnet_read_t req = {
+    .device_instance = 5678,
+    .object_type = OBJECT_ANALOG_INPUT,
+    .object_instance = 1,
+    .property_id = PROP_PRESENT_VALUE,
+    .array_index = -1,        // 重复代码
+    .timeout_ms = 6000,       // 重复代码
+    .value = &value
+};
+
+// ✅ 推荐：使用宏 + 配置文件默认值
+bacnet_read_t req = BACNET_READ_INIT(
+    5678, OBJECT_ANALOG_INPUT, 1, PROP_PRESENT_VALUE, &value
+);
+// array_index 自动为 -1
+// timeout_ms 自动使用配置文件的 read_timeout_ms (6000)
 ```
 
 ### 🔥 热配置使用
@@ -503,6 +579,188 @@ kill -SIGUSR1 $(pidof your_program)
 // 或者代码调用
 bacnet_reload_config();
 ```
+
+### 🎛️ 配置管理架构
+
+**v3.0 版本重构了配置管理系统，实现了三层配置优先级和集中化常量管理。**
+
+#### 📍 配置常量集中管理
+
+所有默认值常量统一定义在一个位置，方便查找和修改：
+
+**位置**：`impl/bacnet/src/proto_bacnet_internal.hpp`  
+**命名空间**：`bacnet::defaults`  
+**行号**：约 135-210 行
+
+```cpp
+namespace bacnet::defaults {
+    // [Common] 通用配置
+    inline constexpr const char* kEnvironment = "development";
+    inline constexpr const char* kLogLevel = "debug";
+    inline constexpr const char* kLogFile = "bacnet.log";
+    
+    // [Discovery] 设备发现
+    inline constexpr uint32_t kTargetDeviceStart = 5678;
+    inline constexpr uint32_t kTargetDeviceEnd = 5678;
+    inline constexpr uint8_t kWhoIsRetry = 3;
+    inline constexpr uint32_t kDiscoveryTimeoutMs = 5000;
+    
+    // [LocalDevice] 本地设备
+    inline constexpr uint32_t kLocalDeviceInstance = 4194303;
+    inline constexpr uint16_t kMaxApdu = 1476;
+    
+    // [Network] 网络配置
+    inline constexpr uint16_t kPort = 47808;
+    inline constexpr const char* kBroadcastAddress = "255.255.255.255";
+    
+    // [Services] 服务行为
+    inline constexpr uint32_t kReadTimeoutMs = 6000;
+    inline constexpr uint32_t kWriteTimeoutMs = 6000;
+    inline constexpr uint8_t kDefaultPriority = 8;
+    inline constexpr uint32_t kCacheExpiryMs = 1000;
+    inline constexpr uint8_t kCacheStrategy = 0;
+    inline constexpr uint32_t kDatalinkMaintenanceMs = 1000;
+    
+    // [Connection] 连接管理
+    inline constexpr uint8_t kMaxReconnectAttempts = 5;
+    inline constexpr uint32_t kReconnectIntervalMs = 3000;
+    
+    // [System] 系统配置
+    inline constexpr const char* kConfigPath = "../config.yaml";
+}
+```
+
+#### 🔄 三层配置优先级
+
+系统采用三层配置优先级机制，确保灵活性和健壮性：
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│ 优先级 1：用户传入参数（最高优先级）                        │
+│ ↓ 如果用户未指定（值为0或NULL）                             │
+├─────────────────────────────────────────────────────────────┤
+│ 优先级 2：YAML 配置文件 (config.yaml)                       │
+│ ↓ 如果配置文件不存在或配置项缺失                             │
+├─────────────────────────────────────────────────────────────┤
+│ 优先级 3：代码中的常量 (bacnet::defaults::*)                │
+│ 最后的兜底保证，确保系统始终能运行                          │
+└─────────────────────────────────────────────────────────────┘
+```
+
+**示例：读超时配置加载流程**
+
+```cpp
+// 用户调用
+bacnet_read_t req = BACNET_READ_INIT(5678, ANALOG_INPUT, 1, PRESENT_VALUE, &value);
+// timeout_ms = 0 (未指定)
+
+// 系统内部处理
+uint32_t timeout = req->timeout_ms;  // Step 1: 检查用户值 = 0
+
+if (timeout == 0) {
+    timeout = context->config.bacnet.services.read_timeout_ms;  // Step 2: 使用YAML配置
+}
+
+if (timeout == 0) {
+    timeout = bacnet::defaults::kReadTimeoutMs;  // Step 3: 使用代码常量兜底 = 6000
+}
+```
+
+#### 📊 配置组织结构
+
+| 配置分类 | 包含项目 | 说明 |
+|---------|---------|------|
+| **Common** | environment, log_level, log_file | 通用配置，影响日志和运行环境 |
+| **Discovery** | target_device, whois_retry, timeout | 设备发现相关配置 |
+| **LocalDevice** | instance_id, max_apdu | 本地BACnet设备参数 |
+| **Network** | port, broadcast_address, interface | 网络层配置 |
+| **Services** | timeout, priority, cache, datalink | 服务行为和性能调优 |
+| **Connection** | reconnect_attempts, interval | 连接管理和重连策略 |
+| **System** | config_path | 系统级配置 |
+
+#### 🛠️ 配置文件完整示例
+
+```yaml
+# config.yaml - 所有配置项都是可选的，未配置项将使用代码中的默认值
+
+common:
+  environment: "production"
+  log_level: "info"
+  log_file: "bacnet.log"
+
+protocols:
+  bacnet:
+    enabled: true
+    
+    discovery:
+      target_device_start: 5678
+      target_device_end: 5678
+      whois_retry: 3
+      response_timeout_ms: 5000
+    
+    local_device:
+      instance_id: 4194303
+      max_apdu: 1476
+    
+    network:
+      interface: ""                    # 留空使用默认
+      port: 47808
+      broadcast_address: "255.255.255.255"
+    
+    services:
+      read_timeout_ms: 6000            # 读操作超时
+      write_timeout_ms: 6000           # 写操作超时
+      default_priority: 8              # 写操作默认优先级
+      cache_expiry_ms: 1000            # 缓存过期时间
+      cache_strategy: 0                # 0=激进 1=保守
+      datalink_maintenance_ms: 1000    # DataLink维护间隔
+    
+    connection:
+      max_reconnect_attempts: 5        # 最大重连次数
+      reconnect_interval_ms: 3000      # 重连间隔基准
+```
+
+#### ✨ 配置管理优势
+
+| 优势 | 说明 |
+|------|------|
+| **集中管理** | 所有默认值在一个文件的70行内，修改方便 |
+| **清晰分类** | 按功能模块分组，每组都有注释说明 |
+| **IDE友好** | 使用 `bacnet::defaults::k` + 自动补全快速查找 |
+| **避免重复** | 消除了分散在多个文件的重复定义 |
+| **易于维护** | 修改默认值只需编辑一个位置 |
+| **健壮性** | 三层兜底机制，即使配置文件丢失也能运行 |
+| **灵活性** | 支持运行时通过YAML文件调整所有参数 |
+
+#### 📝 配置启动日志
+
+系统启动时会打印完整的配置表，显示每个配置项的值和来源：
+
+```
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃          BACnet Configuration Loaded                         ┃
+┣━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┫
+┃ [Common]                                                     ┃
+┃   environment        : production            [YAML   ] ┃
+┃   log_level          : info                  [YAML   ] ┃
+┃   log_file           : bacnet.log            [DEFAULT] ┃
+┣━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┫
+┃ [BACnet.Services]                                            ┃
+┃   read_timeout_ms    : 8000                  [YAML   ] ┃
+┃   write_timeout_ms   : 6000                  [DEFAULT] ┃
+┃   default_priority   : 8                     [DEFAULT] ┃
+┃   cache_strategy     : 1                     [YAML   ] ┃
+┃   datalink_maint_ms  : 1000                  [DEFAULT] ┃
+┣━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┫
+┃ [BACnet.Connection]                                          ┃
+┃   max_reconnect_attempts: 5                  [DEFAULT] ┃
+┃   reconnect_interval_ms : 3000               [DEFAULT] ┃
+┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
+```
+
+**来源标识说明**：
+- `[YAML   ]` - 从 config.yaml 文件加载
+- `[DEFAULT]` - 使用代码中的默认值常量
 
 ---
 
@@ -1347,7 +1605,39 @@ impl/bacnet/
 
 ## 📝 更新日志
 
-### 🎉 v2.1 - 2025-10-28 (最新异步优化版)
+### 🚀 v3.0 - 2025-11-07 (配置管理重构版)
+
+**� 核心改进：统一配置管理架构**
+
+#### ⚙️ 配置系统重构
+- ✨ **三层配置优先级** - 用户参数 → YAML配置 → 代码常量，灵活且健壮
+- 📍 **集中化常量管理** - 所有默认值统一在 `proto_bacnet_internal.hpp` 的 `bacnet::defaults` 命名空间
+- 🗂️ **分类组织** - 7大配置模块（Common/Discovery/LocalDevice/Network/Services/Connection/System）
+- 📊 **配置来源追踪** - 启动时打印完整配置表，标明每个值的来源（YAML/DEFAULT）
+- 🔧 **YAML完整支持** - 真正的配置文件解析，不再是硬编码默认值
+
+#### 🆕 新增配置项
+- `datalink_maintenance_ms` - DataLink维护定时器间隔配置
+- `max_reconnect_attempts` - 最大重连次数可配置
+- `reconnect_interval_ms` - 重连间隔基准时间可配置
+
+#### 🎨 API简化优化
+- 📦 **便捷宏** - `BACNET_READ_INIT()` / `BACNET_WRITE_INIT()` 减少30%参数
+- 🎯 **智能默认值** - `array_index`默认-1，`timeout_ms`/`priority`默认0（使用配置）
+- 📝 **代码精简** - 使用便捷宏可减少22-57%代码量
+
+#### 🏗️ 架构优化
+- 🔧 **配置结构扩展** - 新增 `bacnet_connection_config_t` 结构
+- 🗑️ **消除硬编码** - 移除所有分散的魔法数字，统一为命名常量
+- 📚 **文档完善** - README新增"配置管理架构"章节，详细说明配置系统
+
+#### 💡 维护性提升
+- ✅ 所有配置常量集中在70行代码内，修改方便
+- ✅ IDE友好的命名空间设计（`bacnet::defaults::k` + 自动补全）
+- ✅ 详细注释说明每个配置项的含义和单位
+- ✅ 配置文件不存在时系统仍可正常运行
+
+### �🎉 v2.1 - 2025-10-28 (异步优化版)
 
 - ✨ **新增 `check_only` 模式** - 仅检查队列而不发送重复请求
 - 🐛 **修复 ACK 处理延迟** - 工作线程定期醒来处理数据包
@@ -1427,3 +1717,198 @@ impl/bacnet/
 **📅 最后更新**: 2025-10-28  
 **🏷️ 版本**: v2.1 (异步优化版)  
 **⭐ 如果这个项目对你有帮助，请给我们一个 Star！**
+
+
+---
+
+##  附录：状态和概念快速参考
+
+###  连接状态 (ConnectionState)
+
+| 值 | 状态 | 说明 |
+|----|------|------|
+| 0 | DISCONNECTED | 未连接 |
+| 1 | CONNECTING | 连接中，正在发送 Who-Is |
+| 2 | CONNECTED | 已连接，可以正常通信 |
+| 3 | ERROR | 错误状态 |
+
+**日志函数**: `connection_state_to_string(state)`
+
+---
+
+###  缓存策略 (CacheStrategy)
+
+| 值 | 策略 | 说明 |
+|----|------|------|
+| 0 | Aggressive | 激进策略 - 每次都发送请求，立即返回缓存 |
+| 1 | Conservative | 保守策略 - 仅缓存过期时发送请求 |
+
+**配置文件** (`config.yaml`):
+```yaml
+cache_strategy: 0      # 策略
+cache_expiry_ms: 1000  # 过期时间(毫秒)
+```
+
+**日志函数**: `cache_strategy_to_string(strategy)`
+
+---
+
+###  Invoke ID 状态
+
+| 值 | 说明 |
+|----|------|
+| 0-254 | 有效的 BACnet 事务 ID |
+| 0xFF | INVALID (无活跃请求) |
+
+**日志函数**: `invoke_id_to_string(id, buffer, size)`  
+**检查函数**: `is_invoke_id_valid(id)`
+
+---
+
+###  四元组 (ObjectKey) - 核心概念
+
+每个 BACnet 属性读取由**四元组**唯一标识：
+
+```
+{device_instance, object_type, object_instance, property_id}
+```
+
+**示例**:
+```
+{5678, analog-input, 1, present-value}   AI-1 的当前值
+{5678, analog-input, 1, description}     AI-1 的描述 (不同property_id)
+{5678, analog-input, 2, present-value}   AI-2 的当前值 (不同instance)
+```
+
+---
+
+###  active_invoke_id - 防重复机制
+
+**作用**: 防止对同一四元组发送重复请求  
+**范围**: 针对**每个四元组**，不是针对整个对象
+
+**并发规则**:
+-  同一对象的不同属性  可以并发
+-  不同实例的同一属性  可以并发  
+-  不同设备的同一对象  可以并发
+-  相同四元组的重复调用  会被跳过
+
+**示例**:
+```cpp
+plc_proto_read({5678, AI, 1, PV})    发送请求 (active=10)
+plc_proto_read({5678, AI, 1, PV})    跳过发送 (已有active=10)
+plc_proto_read({5678, AI, 1, DESC})  发送请求 (不同四元组!)
+```
+
+---
+
+###  对象状态 (ObjectState)
+
+每个四元组的完整状态包含：
+
+| 字段 | 说明 |
+|------|------|
+| `cached_value` | 缓存的值 |
+| `has_valid_cache` | 是否有有效缓存 |
+| `active_invoke_id` | 活跃请求ID (0xFF=无) |
+| `timestamp` | 缓存时间戳 |
+| `status` | 最后操作状态 |
+
+**生命周期**:
+1. 首次读取  `has_valid_cache=false`, 发送请求
+2. 响应到达  更新缓存, `active_invoke_id=0xFF`
+3. 缓存使用  检查过期时间
+4. 缓存过期  发送新请求
+
+---
+
+###  常见日志解读
+
+```
+[PLC] Current connection state: 2 (CONNECTED)
+ 已连接到设备
+
+[BACnet] Cache strategy: Aggressive (always send requests) (expiry: 1000ms)
+ 激进策略，1秒缓存过期
+
+[PLC] Request sent: analog-input-1, present-value (invoke_id: 10)
+ 发送了读取请求
+
+[PLC] Request pending: analog-input-1, present-value (active invoke_id: 10)
+ 已有活跃请求，跳过发送（防重复）
+
+[BACnet] Cache stats - Objects: 8 (cached: 8, active: 1)
+ 8个对象，全部有缓存，1个请求在飞行中
+
+[BACnet] ReadProperty successful, cache updated (device: 5678, analog-input-1)
+ 缓存已更新
+```
+
+---
+
+###  调试命令
+
+```bash
+# 查看连接状态
+grep "connection state:" bacnet.log | tail -1
+
+# 查看缓存统计
+grep "Cache stats" bacnet.log | tail -5
+
+# 查看活跃请求
+grep "Request pending" bacnet.log | wc -l
+
+# 查看 Invoke ID 映射
+grep "mapped to\|map size" bacnet.log | tail -10
+
+# 监控性能
+watch -n 1 'grep "Cache stats" bacnet.log | tail -1'
+```
+
+---
+
+###  性能分析
+
+**缓存统计解读**:
+```
+cached: 10, active: 0    理想 (所有有缓存，无活跃请求)
+cached: 10, active: 2    正常 (2个请求在等待)
+cached:  3, active: 7    注意 (多数请求在等待)
+cached:  0, active: 10   异常 (所有请求都超时?)
+```
+
+---
+
+###  常见问题排查
+
+**Q: 看到大量 "Request pending"**  
+A: 网络延迟高或设备响应慢  
+解决: 增加 `cache_expiry_ms` 或降低 PLC 轮询频率
+
+**Q: active 数量持续很高**  
+A: 请求堆积，响应未到达  
+解决: 检查网络、设备状态、超时设置
+
+**Q: map size 一直增长**  
+A: Invoke ID 映射泄漏  
+解决: 检查 `cleanup_stale_requests()` 是否正常工作
+
+**Q: 缓存命中率低**  
+A: 缓存过期太快  
+解决: 增大 `cache_expiry_ms`
+
+---
+
+###  核心函数和数据结构
+
+**状态转换函数** (`proto_bacnet_utils.cpp`):
+- `connection_state_to_string(ConnectionState)`
+- `cache_strategy_to_string(CacheStrategy)`
+- `invoke_id_to_string(uint8_t, char*, size_t)`
+- `is_invoke_id_valid(uint8_t)`
+
+**核心数据结构** (`proto_bacnet_internal.hpp`):
+- `struct ObjectKey { ... }`
+- `struct ObjectState { ... }`
+- `std::unordered_map<ObjectKey, ObjectState> object_states`
+- `std::unordered_map<uint8_t, ObjectKey> invoke_id_to_key`

@@ -132,16 +132,117 @@ struct BACnetAddressEqual {
  */
 
 /* -------------------------------------------------------------------------- */
-/* 常量定义                                                                   */
+/* -------------------------------------------------------------------------- */
+/* 配置默认值 - 所有常量集中管理（修改这里即可调整全局默认值）                */
+/* -------------------------------------------------------------------------- */
+/*
+ * 说明：
+ * 1. 这里定义的是兜底默认值，当 config.yaml 不存在或配置项缺失时使用
+ * 2. 所有配置项都可以通过 config.yaml 文件覆盖
+ * 3. 配置优先级：用户传入值 > YAML配置 > 这里的常量
+ * 4. 修改默认值时，请同步更新 config.yaml 中的注释
+ */
+
+namespace defaults {
+
+/* ========================================================================== */
+/* Common 通用配置默认值                                                      */
+/* ========================================================================== */
+inline constexpr const char* kEnvironment = "development";  // 运行环境标识
+inline constexpr const char* kLogLevel = "debug";           // 日志等级
+inline constexpr const char* kLogFile = "bacnet.log";       // 日志文件路径
+
+/* ========================================================================== */
+/* Discovery 设备发现配置默认值                                               */
+/* ========================================================================== */
+inline constexpr uint32_t kTargetDeviceStart = 5678;        // 目标设备实例范围起始
+inline constexpr uint32_t kTargetDeviceEnd = 5678;          // 目标设备实例范围结束
+inline constexpr uint8_t kWhoIsRetry = 3;                   // Who-Is 重试次数
+inline constexpr uint32_t kDiscoveryTimeoutMs = 5000;       // 等待 I-Am 响应超时时间(毫秒)
+
+/* ========================================================================== */
+/* LocalDevice 本地设备配置默认值                                             */
+/* ========================================================================== */
+inline constexpr uint32_t kLocalDeviceInstance = 4194303;   // 本地设备实例ID(BACnet最大值)
+inline constexpr uint16_t kMaxApdu = 1476;                  // 最大APDU长度(BACnet/IP标准)
+
+/* ========================================================================== */
+/* Network 网络配置默认值                                                     */
+/* ========================================================================== */
+inline constexpr uint16_t kPort = 47808;                    // BACnet/IP UDP端口(标准端口)
+inline constexpr const char* kBroadcastAddress = "255.255.255.255";  // 广播地址
+
+/* ========================================================================== */
+/* Services 服务行为配置默认值                                                */
+/* ========================================================================== */
+inline constexpr uint32_t kReadTimeoutMs = 6000;            // 读操作超时时间(毫秒)
+inline constexpr uint32_t kWriteTimeoutMs = 6000;           // 写操作超时时间(毫秒)
+inline constexpr uint8_t kDefaultPriority = 8;              // 写属性默认优先级(1-16)
+inline constexpr uint32_t kCacheExpiryMs = 1000;            // 缓存过期时间(毫秒)
+inline constexpr uint8_t kCacheStrategy = 0;                // 缓存策略: 0=激进 1=保守
+inline constexpr uint32_t kDatalinkMaintenanceMs = 1000;    // DataLink维护定时器间隔(毫秒)
+
+/* ========================================================================== */
+/* Connection 连接管理配置默认值                                              */
+/* ========================================================================== */
+inline constexpr uint8_t kMaxReconnectAttempts = 5;         // 最大重连次数
+inline constexpr uint32_t kReconnectIntervalMs = 3000;      // 重连间隔基准时间(毫秒)
+
+/* ========================================================================== */
+/* System 系统配置                                                            */
+/* ========================================================================== */
+inline constexpr const char* kConfigPath = "../config.yaml"; // 配置文件路径
+
+} // namespace defaults
+
+/* -------------------------------------------------------------------------- */
+/* 配置来源追踪（C++ 内部使用）                                               */
 /* -------------------------------------------------------------------------- */
 
-inline constexpr const char *kDefaultConfigPath = "../config.yaml";
-inline constexpr uint32_t kDefaultReadTimeoutMs = 6000;
-inline constexpr uint32_t kDefaultWriteTimeoutMs = 6000;
-inline constexpr uint32_t kDefaultDiscoveryTimeoutMs = 5000;
-inline constexpr int kMaxReconnectAttempts = 5;
-inline constexpr int kReconnectIntervalMs = 3000;
-inline constexpr uint32_t kDefaultCacheExpiryMs = 1000;  // 缓存过期时间，默认1秒
+// 配置项来源标记
+enum class ConfigSource {
+    Default,    // 使用代码默认值
+    Yaml,       // 从 YAML 文件加载
+    UserParam   // 用户通过参数传入（未来扩展）
+};
+
+// 配置元数据：追踪每个配置项的来源
+struct ConfigMetadata {
+    // Common
+    ConfigSource environment{ConfigSource::Default};
+    ConfigSource log_level{ConfigSource::Default};
+    ConfigSource log_file{ConfigSource::Default};
+    
+    // Discovery
+    ConfigSource target_device_start{ConfigSource::Default};
+    ConfigSource target_device_end{ConfigSource::Default};
+    ConfigSource whois_retry{ConfigSource::Default};
+    ConfigSource response_timeout_ms{ConfigSource::Default};
+    
+    // LocalDevice
+    ConfigSource instance_id{ConfigSource::Default};
+    ConfigSource max_apdu{ConfigSource::Default};
+    
+    // Network
+    ConfigSource interface_name{ConfigSource::Default};
+    ConfigSource port{ConfigSource::Default};
+    ConfigSource broadcast_address{ConfigSource::Default};
+    
+    // Services
+    ConfigSource read_timeout_ms{ConfigSource::Default};
+    ConfigSource write_timeout_ms{ConfigSource::Default};
+    ConfigSource default_priority{ConfigSource::Default};
+    ConfigSource cache_expiry_ms{ConfigSource::Default};
+    ConfigSource cache_strategy{ConfigSource::Default};
+    ConfigSource datalink_maintenance_ms{ConfigSource::Default};
+    
+    // Connection
+    ConfigSource max_reconnect_attempts{ConfigSource::Default};
+    ConfigSource reconnect_interval_ms{ConfigSource::Default};
+    
+    // BACnet enabled
+    ConfigSource bacnet_enabled{ConfigSource::Default};
+};
 
 /* -------------------------------------------------------------------------- */
 /* 操作类型枚举                                                               */
@@ -311,7 +412,7 @@ public:
 
     // 缓存配置
     CacheStrategy cache_strategy{CacheStrategy::Aggressive};  // 默认激进策略
-    uint32_t cache_expiry_ms{kDefaultCacheExpiryMs};          // 缓存过期时间
+    uint32_t cache_expiry_ms{bacnet::defaults::kCacheExpiryMs};  // 缓存过期时间
 
     // 连接状态（原子变量 - 无锁读写）
     std::atomic<bacnet_connection_state_t> connection_state{BACNET_CONN_IDLE};
