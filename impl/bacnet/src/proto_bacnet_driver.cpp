@@ -69,6 +69,29 @@ int BacnetDriver::initialize(proto_ctx_t* ctx) {
     log_info("[BACnet][Driver] Local device instance: {}", 
              context_->config.bacnet.local_device.instance_id);
     
+    // 启动热配置监控（自动检测配置文件变化）
+    if (!config_path_.empty() && context_->config.bacnet.hot_config.enabled) {
+        // 定义配置变化时的回调函数（lambda 转换为函数指针）
+        static auto on_config_changed = +[]() {
+            log_warn("[BACnet][HotConfig] Config file changed, reloading...");
+            bacnet_reload_config();  // 自动重载配置
+        };
+        
+        int ret = hot_config::init(config_path_.c_str(), on_config_changed, nullptr);
+        if (ret == 0) {
+            // 设置轮询间隔（从配置文件读取）
+            hot_config::set_polling_interval(context_->config.bacnet.hot_config.polling_interval_ms);
+            
+            log_info("[BACnet][Driver] Hot config monitoring started for: {}", config_path_);
+            log_info("[BACnet][Driver] Polling interval: {}ms", 
+                     context_->config.bacnet.hot_config.polling_interval_ms);
+        } else {
+            log_warn("[BACnet][Driver] Failed to start hot config monitoring (error: {})", ret);
+        }
+    } else if (!context_->config.bacnet.hot_config.enabled) {
+        log_info("[BACnet][Driver] Hot config monitoring is disabled in config");
+    }
+    
     return PROTO_SUCCESS;
 }
 
@@ -84,6 +107,12 @@ void BacnetDriver::release() {
     }
     
     log_info("[BACnet][Driver] Releasing driver resources...");
+    
+    // 停止热配置监控
+    if (hot_config::is_running()) {
+        log_info("[BACnet][Driver] Stopping hot config monitoring...");
+        hot_config::stop();
+    }
     
     // 使用现有的清理函数
     cleanup_context(context_.get());

@@ -48,3 +48,9 @@ protocols:
     connection:
       max_reconnect_attempts: 5   # 最大重连次数
       reconnect_interval_ms: 3000 # 重连间隔 (毫秒)
+
+    # 热配置监控
+    hot_config:
+      enabled: true               # 是否启用配置文件自动监控 (默认: true)
+      polling_interval_ms: 1000   # 配置文件检查间隔 (毫秒, 默认: 1000ms)
+                                  # 建议范围: 500-5000ms, 太短会增加系统开销

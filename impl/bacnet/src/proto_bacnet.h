@@ -60,12 +60,18 @@ typedef struct {
 } bacnet_connection_config_t;
 
 typedef struct {
+    bool     enabled;                   /* 是否启用热配置监控 (默认 true) */
+    uint32_t polling_interval_ms;       /* 配置文件轮询间隔 (毫秒，默认 1000) */
+} bacnet_hot_config_t;
+
+typedef struct {
     bool                         enabled;      /* 是否启用 BACnet 协议栈 */
     bacnet_discovery_config_t    discovery;    /* 设备发现配置 */
     bacnet_local_device_config_t local_device; /* 本地设备参数 */
     bacnet_network_config_t      network;      /* 网络层配置 */
     bacnet_service_config_t      services;     /* 服务行为配置 */
     bacnet_connection_config_t   connection;   /* 连接管理配置 */
+    bacnet_hot_config_t          hot_config;   /* 热配置监控配置 */
 } bacnet_protocol_config_t;
 
 typedef struct {
@@ -243,14 +249,19 @@ int plc_proto_write(void *req);
 /* -------------------------------------------------------------------------- */
 
 /**
- * @brief 触发配置重载（通过信号调用）
+ * @brief 触发配置重载（通过信号或自动监控调用）
  * @return PROTO_SUCCESS 成功，其他值为错误码
  * 
  * 说明：
  * 1. 由外部信号处理函数调用（如 SIGUSR1）
- * 2. 释放当前驱动并清空状态
- * 3. 下次调用 plc_proto_read/write 时自动重新加载配置
- * 4. 不使用额外的监控线程
+ * 2. 由文件监控线程自动调用（检测到配置文件变化时）
+ * 3. 释放当前驱动并清空状态
+ * 4. 下次调用 plc_proto_read/write 时自动重新加载配置
+ * 
+ * 注意：
+ * - 配置文件监控由 BACnet 驱动自动管理
+ * - 用户无需手动启动/停止监控
+ * - 只需在特殊场景下手动调用此函数
  */
 int bacnet_reload_config(void);
 
@@ -263,6 +274,19 @@ int bacnet_reload_config(void);
  * @param value 要释放内存的 bacnet_data_value_t 结构体指针
  */
 void bacnet_data_value_free(bacnet_data_value_t *value);
+
+/**
+ * @brief 将错误码转换为可读字符串
+ * @param status 错误码
+ * @return 错误描述字符串
+ * 
+ * 示例：
+ *   int ret = plc_proto_read(&req);
+ *   if (ret != PROTO_SUCCESS) {
+ *       printf("Error: %s\n", proto_status_to_string(ret));
+ *   }
+ */
+const char* proto_status_to_string(proto_status_t status);
 
 #ifdef __cplusplus
 }

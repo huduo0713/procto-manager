@@ -152,14 +152,14 @@ void handle_write_property_ack(BACNET_ADDRESS *src, uint8_t invoke_id)
 
     log_debug("[BACnet] WriteProperty Ack received (invoke_id: {})", invoke_id);
 
-    // 通过invoke_id查找对应的写队列项
+    // 通过 invoke_id 查找对应的待确认写操作
     bool found_item = false;
     {
-        std::lock_guard<std::mutex> lock(context->write_queue_mutex);
+        std::lock_guard<std::mutex> lock(context->write_pending_mutex);
         
         // 使用哈希表查找：O(1) 操作
-        auto it = context->write_queue.find(invoke_id);
-        if (it != context->write_queue.end()) {
+        auto it = context->write_pending_map.find(invoke_id);
+        if (it != context->write_pending_map.end()) {
             auto &item = it->second;
             
             // 找到了对应的队列项，标记为成功
@@ -176,7 +176,7 @@ void handle_write_property_ack(BACNET_ADDRESS *src, uint8_t invoke_id)
     }
     
     if (!found_item) {
-        log_warn("[BACnet] No matching write queue item found for invoke_id: {}", invoke_id);
+        log_warn("[BACnet] No matching write pending item found for invoke_id: {}", invoke_id);
     }
 
     // 释放TSM资源
@@ -233,10 +233,10 @@ void handle_error_response(BACNET_ADDRESS *src, uint8_t invoke_id,
                      invoke_id);
         }
     } else {
-        // 检查写队列
-        std::lock_guard<std::mutex> lock_write(context->write_queue_mutex);
-        auto it = context->write_queue.find(invoke_id);
-        if (it != context->write_queue.end()) {
+        // 检查写操作待确认表
+        std::lock_guard<std::mutex> lock_write(context->write_pending_mutex);
+        auto it = context->write_pending_map.find(invoke_id);
+        if (it != context->write_pending_map.end()) {
             auto &item = it->second;
             item.status = PROTO_ERROR_WRITE;
             item.is_completed = true;

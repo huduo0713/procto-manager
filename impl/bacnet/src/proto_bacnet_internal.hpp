@@ -193,6 +193,12 @@ inline constexpr uint32_t kReconnectIntervalMs = 3000;      // 重连间隔基�
 /* ========================================================================== */
 inline constexpr const char* kConfigPath = "../config.yaml"; // 配置文件路径
 
+/* ========================================================================== */
+/* HotConfig 热配置监控默认值                                                 */
+/* ========================================================================== */
+inline constexpr uint32_t kHotConfigPollingIntervalMs = 1000; // 配置文件轮询间隔(毫秒)
+inline constexpr bool kHotConfigEnabled = true;               // 是否启用热配置监控
+
 } // namespace defaults
 
 /* -------------------------------------------------------------------------- */
@@ -239,6 +245,10 @@ struct ConfigMetadata {
     // Connection
     ConfigSource max_reconnect_attempts{ConfigSource::Default};
     ConfigSource reconnect_interval_ms{ConfigSource::Default};
+    
+    // HotConfig
+    ConfigSource hot_config_enabled{ConfigSource::Default};
+    ConfigSource hot_config_polling_interval_ms{ConfigSource::Default};
     
     // BACnet enabled
     ConfigSource bacnet_enabled{ConfigSource::Default};
@@ -396,9 +406,11 @@ public:
         uint8_t invoke_id;  // BACnet协议的调用ID，用于精确匹配
     };
     
-    std::unordered_map<uint8_t, WriteBufferItem> write_queue;
-    std::mutex write_queue_mutex;
-    std::condition_variable write_queue_cv;
+    // 写操作待确认哈希表（invoke_id -> WriteBufferItem）
+    // 用于跟踪已发送但未收到 ACK 的写请求，O(1) 查找复杂度
+    std::unordered_map<uint8_t, WriteBufferItem> write_pending_map;
+    std::mutex write_pending_mutex;
+    std::condition_variable write_pending_cv;
 
     /* ---------------------------------------------------------------------- */
     /* 公共成员变量（内部使用）                                               */
@@ -611,6 +623,29 @@ private:
     // 配置路径
     std::string config_path_{bacnet::defaults::kConfigPath};
 };
+
+/* -------------------------------------------------------------------------- */
+/* 热配置监控接口（仅供 BacnetDriver 内部使用）                               */
+/* -------------------------------------------------------------------------- */
+
+namespace hot_config {
+
+// 初始化热配置监控
+int init(const char *config_path, void (*on_changed)(void), void *userdata);
+
+// 停止监控线程
+void stop();
+
+// 清理资源
+void cleanup();
+
+// 检查监控线程是否在运行
+bool is_running();
+
+// 设置轮询间隔
+void set_polling_interval(uint32_t interval_ms);
+
+} // namespace hot_config
 
 } // namespace bacnet
 

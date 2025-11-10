@@ -55,7 +55,8 @@ enum class Section {
     LocalDevice,
     Network,
     Services,
-    Connection
+    Connection,
+    HotConfig
 };
 
 // 辅助函数：将 ConfigSource 转换为字符串
@@ -162,6 +163,17 @@ void print_config_table(const bacnet_config_t *cfg, const bacnet::ConfigMetadata
              cfg->bacnet.connection.reconnect_interval_ms,
              source_to_string(meta->reconnect_interval_ms));
     
+    log_info("┣━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┫");
+    
+    // HotConfig配置
+    log_info("┃ [BACnet.HotConfig]                                           ┃");
+    log_info("┃   enabled            : {:<20}  [{:7s}] ┃", 
+             cfg->bacnet.hot_config.enabled ? "true" : "false",
+             source_to_string(meta->hot_config_enabled));
+    log_info("┃   polling_interval_ms: {:20d}  [{:7s}] ┃", 
+             cfg->bacnet.hot_config.polling_interval_ms,
+             source_to_string(meta->hot_config_polling_interval_ms));
+    
     log_info("┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛");
 }
 
@@ -209,6 +221,9 @@ int bacnet_load_config_from_yaml(const char *yaml_path, bacnet_config_t *cfg)
 
     cfg->bacnet.connection.max_reconnect_attempts = kMaxReconnectAttempts;
     cfg->bacnet.connection.reconnect_interval_ms = kReconnectIntervalMs;
+
+    cfg->bacnet.hot_config.enabled = kHotConfigEnabled;
+    cfg->bacnet.hot_config.polling_interval_ms = kHotConfigPollingIntervalMs;
 
     // 2. 尝试打开配置文件
     FILE *file = fopen(yaml_path, "r");
@@ -279,6 +294,9 @@ int bacnet_load_config_from_yaml(const char *yaml_path, bacnet_config_t *cfg)
                             is_section_key = true;
                         } else if (strcmp(value, "connection") == 0) {
                             current_section = Section::Connection;
+                            is_section_key = true;
+                        } else if (strcmp(value, "hot_config") == 0) {
+                            current_section = Section::HotConfig;
                             is_section_key = true;
                         }
                     }
@@ -373,6 +391,15 @@ int bacnet_load_config_from_yaml(const char *yaml_path, bacnet_config_t *cfg)
                             cfg->bacnet.connection.reconnect_interval_ms = (val > 0) ? val : kReconnectIntervalMs;
                             g_config_metadata.reconnect_interval_ms = bacnet::ConfigSource::Yaml;
                         }
+                    } else if (current_section == Section::HotConfig) {
+                        if (last_key == "enabled") {
+                            cfg->bacnet.hot_config.enabled = parse_bool(value, true);
+                            g_config_metadata.hot_config_enabled = bacnet::ConfigSource::Yaml;
+                        } else if (last_key == "polling_interval_ms") {
+                            uint32_t val = std::atoi(value);
+                            cfg->bacnet.hot_config.polling_interval_ms = (val > 0) ? val : kHotConfigPollingIntervalMs;
+                            g_config_metadata.hot_config_polling_interval_ms = bacnet::ConfigSource::Yaml;
+                        }
                     }
                     
                     last_key.clear();
@@ -386,7 +413,8 @@ int bacnet_load_config_from_yaml(const char *yaml_path, bacnet_config_t *cfg)
                     current_section == Section::LocalDevice ||
                     current_section == Section::Network ||
                     current_section == Section::Services ||
-                    current_section == Section::Connection) {
+                    current_section == Section::Connection ||
+                    current_section == Section::HotConfig) {
                     current_section = Section::Bacnet;
                 } else if (current_section == Section::Bacnet) {
                     current_section = Section::Protocols;
@@ -610,5 +638,40 @@ proto_status_t store_application_value(bacnet_read_t *req, const BACNET_APPLICAT
     
     return PROTO_SUCCESS;
 }
+
+/* -------------------------------------------------------------------------- */
+/* 错误码转字符串（C 接口）                                                   */
+/* -------------------------------------------------------------------------- */
+
+extern "C" {
+
+const char* proto_status_to_string(proto_status_t status) {
+    switch (status) {
+        case PROTO_SUCCESS:
+            return "成功 (PROTO_SUCCESS)";
+        case PROTO_ERROR_INIT:
+            return "初始化失败 (PROTO_ERROR_INIT)";
+        case PROTO_ERROR_CONNECT:
+            return "连接失败 (PROTO_ERROR_CONNECT)";
+        case PROTO_ERROR_READ:
+            return "读取失败 (PROTO_ERROR_READ)";
+        case PROTO_ERROR_WRITE:
+            return "写入失败 (PROTO_ERROR_WRITE)";
+        case PROTO_ERROR_UNSUPPORTED:
+            return "不支持的操作 (PROTO_ERROR_UNSUPPORTED)";
+        case PROTO_ERROR_PARAM:
+            return "参数错误 (PROTO_ERROR_PARAM)";
+        case PROTO_NO_DATA:
+            return "暂无数据 (PROTO_NO_DATA)";
+        case PROTO_ERROR_MEMORY:
+            return "内存错误 (PROTO_ERROR_MEMORY)";
+        case PROTO_TIMEOUT:
+            return "超时 (PROTO_TIMEOUT)";
+        default:
+            return "未知错误";
+    }
+}
+
+} // extern "C"
 
 } // namespace bacnet

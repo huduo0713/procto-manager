@@ -157,15 +157,15 @@ void worker_loop_function(BacnetContext *context)
             }
             
             {
-                std::lock_guard<std::mutex> lock(context->write_queue_mutex);
-                write_count = context->write_queue.size();
-                for (const auto &pair : context->write_queue) {
+                std::lock_guard<std::mutex> lock(context->write_pending_mutex);
+                write_count = context->write_pending_map.size();
+                for (const auto &pair : context->write_pending_map) {
                     if (pair.second.is_completed) write_completed++;
                 }
             }
             
             if (object_states_count > 0 || write_count > 0) {
-                log_info("[BACnet] Cache stats - Objects: {} (cached: {}, active: {}), InvokeID mappings: {}, Write queue: {}/{}",
+                log_info("[BACnet] Cache stats - Objects: {} (cached: {}, active: {}), InvokeID mappings: {}, Write pending: {}/{}",
                          object_states_count, cached_objects, active_requests, 
                          invoke_id_mappings, write_completed, write_count);
             }
@@ -307,10 +307,10 @@ void cleanup_stale_requests(BacnetContext *context) {
         }
     }
     
-    // 清理写队列
+    // 清理写操作待确认表
     {
-        std::lock_guard<std::mutex> lock(context->write_queue_mutex);
-        for (auto it = context->write_queue.begin(); it != context->write_queue.end(); ) {
+        std::lock_guard<std::mutex> lock(context->write_pending_mutex);
+        for (auto it = context->write_pending_map.begin(); it != context->write_pending_map.end(); ) {
             auto &item = it->second;
             auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
                 now - item.timestamp).count();
@@ -330,7 +330,7 @@ void cleanup_stale_requests(BacnetContext *context) {
                     }
                 }
                 
-                it = context->write_queue.erase(it);
+                it = context->write_pending_map.erase(it);
             } else {
                 ++it;
             }

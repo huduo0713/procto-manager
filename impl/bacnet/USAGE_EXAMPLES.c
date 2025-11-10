@@ -33,7 +33,7 @@ void example_simple_read() {
     if (ret == PROTO_SUCCESS) {
         printf("✓ 读取成功: %.2f\n", value.value.real_value);
     } else {
-        printf("✗ 读取失败: 错误码 %d\n", ret);
+        printf("✗ 读取失败: %s\n", proto_status_to_string((proto_status_t)ret));
     }
 }
 
@@ -64,7 +64,7 @@ void example_simple_write() {
     if (ret == PROTO_SUCCESS) {
         printf("✓ 写入成功: 25.5\n");
     } else {
-        printf("✗ 写入失败: 错误码 %d\n", ret);
+        printf("✗ 写入失败: %s\n", proto_status_to_string((proto_status_t)ret));
     }
 }
 
@@ -152,7 +152,7 @@ void example_continuous_monitoring() {
         if (ret == PROTO_SUCCESS) {
             printf("✓ %.2f\n", value.value.real_value);
         } else {
-            printf("✗ 错误码 %d\n", ret);
+            printf("✗ %s\n", proto_status_to_string((proto_status_t)ret));
         }
         
         // 等待 1 秒

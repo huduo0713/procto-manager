@@ -434,6 +434,23 @@ int plc_proto_read(void *req)
               read_req->object_instance,
               prop_name);
 
+    // ✨ 检查是否有待重载的配置（在获取锁之前）
+    auto& driver = bacnet::BacnetDriver::instance();
+    if (driver.is_initialized()) {
+        auto* ctx = driver.get_context();
+        if (ctx && ctx->pending_reload) {
+            std::lock_guard<std::mutex> hot_lock(ctx->hot_config_mutex);
+            if (ctx->pending_reload) {  // 双重检查
+                log_warn("[BACnet] Pending config reload detected, releasing driver...");
+                ctx->pending_reload = false;
+                
+                std::lock_guard<std::mutex> global_lock(g_plc_mutex);
+                driver.release();
+                // 下面会自动重新初始化
+            }
+        }
+    }
+
     int rc;
     {
         std::lock_guard<std::mutex> lock(g_plc_mutex);
@@ -444,8 +461,7 @@ int plc_proto_read(void *req)
         return rc;
     }
 
-    // 使用驱动单例获取上下文
-    auto& driver = bacnet::BacnetDriver::instance();
+    // 获取上下文（使用前面已声明的 driver）
     BacnetContext *context = driver.get_context();
     if (!context) {
         log_error("[PLC] Failed to get context in plc_proto_read");
@@ -535,6 +551,23 @@ int plc_proto_write(void *req)
     }
     auto *write_req = static_cast<bacnet_write_t *>(req);
 
+    // ✨ 检查是否有待重载的配置
+    auto& driver = bacnet::BacnetDriver::instance();
+    if (driver.is_initialized()) {
+        auto* ctx = driver.get_context();
+        if (ctx && ctx->pending_reload) {
+            std::lock_guard<std::mutex> hot_lock(ctx->hot_config_mutex);
+            if (ctx->pending_reload) {  // 双重检查
+                log_warn("[BACnet] Pending config reload detected, releasing driver...");
+                ctx->pending_reload = false;
+                
+                std::lock_guard<std::mutex> global_lock(g_plc_mutex);
+                driver.release();
+                // 下面会自动重新初始化
+            }
+        }
+    }
+
     int rc;
     {
         std::lock_guard<std::mutex> lock(g_plc_mutex);
@@ -544,8 +577,7 @@ int plc_proto_write(void *req)
         return rc;
     }
 
-    // 使用驱动单例获取上下文
-    auto& driver = bacnet::BacnetDriver::instance();
+    // 获取上下文（使用前面已声明的 driver）
     BacnetContext *context = driver.get_context();
     if (!context) {
         return PROTO_ERROR_INIT;
@@ -569,20 +601,23 @@ int plc_proto_write(void *req)
 
 int bacnet_reload_config(void)
 {
-    std::lock_guard<std::mutex> lock(g_plc_mutex);
-    
-    log_info("[BACnet] Config reload triggered by signal");
+    log_info("[BACnet] Config reload triggered");
     
     // 使用驱动单例重载配置
     auto& driver = bacnet::BacnetDriver::instance();
     
-    if (driver.is_initialized()) {
-        log_info("[BACnet] Releasing current driver for config reload...");
-        driver.release();
+    if (!driver.is_initialized()) {
+        log_warn("[BACnet] Driver not initialized, nothing to reload");
+        return PROTO_SUCCESS;
     }
     
-    // 下次调用 plc_proto_read/write 时会自动重新初始化并加载新配置
-    log_info("[BACnet] Driver will be reinitialized on next request");
+    // 设置待重载标志（线程安全）
+    auto* ctx = driver.get_context();
+    if (ctx) {
+        std::lock_guard<std::mutex> lock(ctx->hot_config_mutex);
+        ctx->pending_reload = true;
+        log_info("[BACnet] Config reload flag set, will reload on next read/write request");
+    }
     
     return PROTO_SUCCESS;
 }

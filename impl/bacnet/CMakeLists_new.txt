@@ -80,12 +80,8 @@ add_bacnet_executable(concurrent_test demo/concurrent_test.c)
 #    文件：demo/hot_config_test.c
 #    功能：演示配置文件自动监控和热重载功能
 #    用法：运行后修改 config.yaml，观察程序自动检测并重载配置
-#    注意：虽然是 .c 文件，但因为包含了 C++ 头文件，需要用 C++ 编译器编译
 # ------------------------------------------------------------------------------
-add_bacnet_executable(hot_config_test demo/hot_config_test.cc)
-
-# 强制用 C++ 编译器编译（因为包含了 one_logger.hpp 等 C++ 头文件）
-set_source_files_properties(demo/hot_config_test.cc PROPERTIES LANGUAGE CXX)
+add_bacnet_executable(hot_config_test demo/hot_config_test.c)
 
 # ==============================================================================
 # 构建总结信息

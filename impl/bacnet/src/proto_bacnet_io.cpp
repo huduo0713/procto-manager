@@ -217,11 +217,11 @@ proto_status_t execute_write_property(BacnetContext *context, const bacnet_write
         context->active_operation.invoke_id = invoke_id;
         set_operation_state(context, BACNET_OP_PENDING);
 
-        // 将请求添加到写队列
+        // 将请求添加到待确认哈希表
         {
-            std::lock_guard<std::mutex> lock_queue(context->write_queue_mutex);
+            std::lock_guard<std::mutex> lock_pending(context->write_pending_mutex);
             
-            // 使用哈希表存储，invoke_id 作为 key
+            // 使用哈希表存储，invoke_id 作为 key，O(1) 插入和查找
             BacnetContext::WriteBufferItem item{};
             item.device_instance = req->device_instance;
             item.object_type = req->object_type;
@@ -233,10 +233,10 @@ proto_status_t execute_write_property(BacnetContext *context, const bacnet_write
             item.timestamp = std::chrono::steady_clock::now();
 
             // 插入哈希表：O(1) 操作
-            context->write_queue[invoke_id] = item;
+            context->write_pending_map[invoke_id] = item;
             
-            log_debug("[BACnet] Write request added to map (invoke_id: {}, map size: {})", 
-                     invoke_id, context->write_queue.size());
+            log_debug("[BACnet] Write request added to pending map (invoke_id: {}, map size: {})", 
+                     invoke_id, context->write_pending_map.size());
         }
 
         // 输出invoke_id
@@ -244,7 +244,7 @@ proto_status_t execute_write_property(BacnetContext *context, const bacnet_write
             *invoke_id_out = invoke_id;
         }
 
-        log_info("[BACnet] WriteProperty request sent and added to map (device: {}, object: {}-{}, property: {}, priority: {}, invoke_id: {})",
+        log_info("[BACnet] WriteProperty request sent and added to pending map (device: {}, object: {}-{}, property: {}, priority: {}, invoke_id: {})",
                  req->device_instance, 
                  bactext_object_type_name(req->object_type), 
                  req->object_instance,

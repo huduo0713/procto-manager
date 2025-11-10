@@ -49,7 +49,7 @@ void test_concurrent_reads() {
         } else if (result == PROTO_NO_DATA) {
             printf("📤 %s - 请求已发送，等待响应\n", objects[i].name);
         } else {
-            printf("❌ %s - 失败: %d\n", objects[i].name, result);
+            printf("❌ %s - %s\n", objects[i].name, proto_status_to_string((proto_status_t)result));
         }
     }
 
@@ -102,7 +102,7 @@ void test_concurrent_reads() {
         } else if (result == PROTO_NO_DATA) {
             printf("⏳ %s - 仍在等待响应\n", objects[i].name);
         } else {
-            printf("❌ %s - 失败: %d\n", objects[i].name, result);
+            printf("❌ %s - %s\n", objects[i].name, proto_status_to_string((proto_status_t)result));
         }
     }
 
@@ -148,7 +148,7 @@ void test_repeated_reads() {
                 printf("  ⏳ 仍在等待 (设备可能响应非常慢)\n");
             }
         } else {
-            printf("  ❌ 失败: %d\n", result);
+            printf("  ❌ %s\n", proto_status_to_string((proto_status_t)result));
         }
 
         printf("\n");
@@ -213,7 +213,8 @@ void test_concurrent_writes() {
                     break;
             }
         } else {
-            printf("❌ 提交写入 %s 失败: %d\n", writes[i].name, result);
+            printf("❌ 提交写入 %s 失败: %s\n", writes[i].name, 
+                   proto_status_to_string((proto_status_t)result));
         }
     }
 
@@ -252,7 +253,7 @@ void test_plc_polling() {
         } else if (result == PROTO_NO_DATA) {
             printf("📤 等待响应中...\n");
         } else {
-            printf("❌ 错误: %d\n", result);
+            printf("❌ %s\n", proto_status_to_string((proto_status_t)result));
         }
 
         usleep(100000);  // 100ms间隔
