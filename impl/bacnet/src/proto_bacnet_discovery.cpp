@@ -159,15 +159,13 @@ void worker_loop_function(BacnetContext *context)
             {
                 std::lock_guard<std::mutex> lock(context->write_pending_mutex);
                 write_count = context->write_pending_map.size();
-                for (const auto &pair : context->write_pending_map) {
-                    if (pair.second.is_completed) write_completed++;
-                }
+                // 所有在 map 中的都是待确认的（收到 ACK 后立即删除）
             }
             
             if (object_states_count > 0 || write_count > 0) {
-                log_info("[BACnet] Cache stats - Objects: {} (cached: {}, active: {}), InvokeID mappings: {}, Write pending: {}/{}",
+                log_info("[BACnet] Cache stats - Objects: {} (cached: {}, active: {}), InvokeID mappings: {}, Write pending: {}",
                          object_states_count, cached_objects, active_requests, 
-                         invoke_id_mappings, write_completed, write_count);
+                         invoke_id_mappings, write_count);
             }
             
             last_stats = stats_now;
@@ -307,7 +305,7 @@ void cleanup_stale_requests(BacnetContext *context) {
         }
     }
     
-    // 清理写操作待确认表
+        // 清理写操作待确认表（超时未收到 ACK 的请求）
     {
         std::lock_guard<std::mutex> lock(context->write_pending_mutex);
         for (auto it = context->write_pending_map.begin(); it != context->write_pending_map.end(); ) {
@@ -315,21 +313,49 @@ void cleanup_stale_requests(BacnetContext *context) {
             auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
                 now - item.timestamp).count();
             
-            uint32_t timeout_threshold = 12000;  // 写操作默认12秒
-            
-            if (elapsed > timeout_threshold) {
-                log_warn("[BACnet] Cleaning stale write request (invoke_id: {}, elapsed: {}ms)",
-                         item.invoke_id, elapsed);
-                
-                if (!item.is_completed) {
-                    item.status = PROTO_TIMEOUT;
-                    item.is_completed = true;
-                    
-                    if (item.invoke_id != 0) {
-                        tsm_free_invoke_id(item.invoke_id);
-                    }
+            // 使用该请求存储的超时值（三层优先级：请求参数 > 配置文件 > 默认值）
+            if (elapsed > item.timeout_ms) {
+                // 构建值的字符串表示
+                std::string value_str;
+                switch (item.value.type) {
+                    case BACNET_DATA_REAL:
+                        value_str = std::to_string(item.value.value.real_value);
+                        break;
+                    case BACNET_DATA_BOOLEAN:
+                        value_str = item.value.value.boolean_value ? "TRUE" : "FALSE";
+                        break;
+                    case BACNET_DATA_UNSIGNED:
+                        value_str = std::to_string(item.value.value.unsigned_value);
+                        break;
+                    case BACNET_DATA_SIGNED:
+                        value_str = std::to_string(item.value.value.signed_value);
+                        break;
+                    case BACNET_DATA_ENUM:
+                        value_str = std::to_string(item.value.value.enum_value);
+                        break;
+                    default:
+                        value_str = "(type:" + std::to_string(item.value.type) + ")";
+                        break;
                 }
                 
+                // 超时未收到 ACK，记录详细警告日志并清除
+                log_warn("[BACnet] ⏱️ WriteProperty timeout (device: {}, {}-{}, {}, value: {}, priority: {}, invoke_id: {}, elapsed: {}ms, timeout: {}ms)",
+                         item.device_instance,
+                         bactext_object_type_name(item.object_type),
+                         item.object_instance,
+                         bactext_property_name(item.property_id),
+                         value_str,
+                         item.priority,
+                         item.invoke_id, 
+                         elapsed,
+                         item.timeout_ms);  // 显示配置的超时值
+                
+                // 释放 BACnet 协议栈资源
+                if (item.invoke_id != 0) {
+                    tsm_free_invoke_id(item.invoke_id);
+                }
+                
+                // 删除超时项
                 it = context->write_pending_map.erase(it);
             } else {
                 ++it;

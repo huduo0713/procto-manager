@@ -4,6 +4,7 @@
  */
 
 #include "proto_bacnet_internal.hpp"
+#include <cstdlib>  // std::atexit
 #include <stdexcept>
 
 namespace bacnet {
@@ -30,11 +31,6 @@ BacnetDriver& BacnetDriver::instance() {
 /* -------------------------------------------------------------------------- */
 /* 析构函数 - RAII 自动清理                                                   */
 /* -------------------------------------------------------------------------- */
-
-BacnetDriver::~BacnetDriver() {
-    release();
-}
-
 /* -------------------------------------------------------------------------- */
 /* 初始化驱动                                                                 */
 /* -------------------------------------------------------------------------- */
@@ -42,35 +38,33 @@ BacnetDriver::~BacnetDriver() {
 int BacnetDriver::initialize(proto_ctx_t* ctx) {
     std::lock_guard<std::mutex> lock(mutex_);
     
-    if (context_) {
-        log_warn("[BACnet][Driver] Already initialized, releasing old context");
-        context_.reset();
-    }
-    
     log_info("[BACnet][Driver] Initializing driver...");
     
-    // 创建新上下文（使用智能指针自动管理）
-    context_ = std::make_unique<BacnetContext>();
-    context_->ctx = ctx;
+    // 直接使用单例的初始化方法
+    auto& context = BacnetContext::instance();
+    proto_status_t status = context.initialize(ctx);
     
-    // 使用现有的初始化函数
-    proto_status_t status = initialize_context(context_.get());
     if (status != PROTO_SUCCESS) {
         log_error("[BACnet][Driver] Failed to initialize context");
-        context_.reset();
         return status;
     }
     
-    // 设置全局上下文指针（供 C 回调函数使用）
-    extern BacnetContext *g_ctx;
-    g_ctx = context_.get();
+    // 注册退出时自动清理（只注册一次）
+    static bool cleanup_registered = false;
+    if (!cleanup_registered) {
+        std::atexit([]() {
+            log_info("[BACnet] Program exiting, auto-cleanup resources...");
+            bacnet_cleanup();
+        });
+        cleanup_registered = true;
+    }
     
     log_info("[BACnet][Driver] Initialization completed successfully");
     log_info("[BACnet][Driver] Local device instance: {}", 
-             context_->config.bacnet.local_device.instance_id);
+             context.config.bacnet.local_device.instance_id);
     
     // 启动热配置监控（自动检测配置文件变化）
-    if (!config_path_.empty() && context_->config.bacnet.hot_config.enabled) {
+    if (!config_path_.empty() && context.config.bacnet.hot_config.enabled) {
         // 定义配置变化时的回调函数（lambda 转换为函数指针）
         static auto on_config_changed = +[]() {
             log_warn("[BACnet][HotConfig] Config file changed, reloading...");
@@ -80,15 +74,15 @@ int BacnetDriver::initialize(proto_ctx_t* ctx) {
         int ret = hot_config::init(config_path_.c_str(), on_config_changed, nullptr);
         if (ret == 0) {
             // 设置轮询间隔（从配置文件读取）
-            hot_config::set_polling_interval(context_->config.bacnet.hot_config.polling_interval_ms);
+            hot_config::set_polling_interval(context.config.bacnet.hot_config.polling_interval_ms);
             
             log_info("[BACnet][Driver] Hot config monitoring started for: {}", config_path_);
             log_info("[BACnet][Driver] Polling interval: {}ms", 
-                     context_->config.bacnet.hot_config.polling_interval_ms);
+                     context.config.bacnet.hot_config.polling_interval_ms);
         } else {
             log_warn("[BACnet][Driver] Failed to start hot config monitoring (error: {})", ret);
         }
-    } else if (!context_->config.bacnet.hot_config.enabled) {
+    } else if (!context.config.bacnet.hot_config.enabled) {
         log_info("[BACnet][Driver] Hot config monitoring is disabled in config");
     }
     
@@ -102,7 +96,8 @@ int BacnetDriver::initialize(proto_ctx_t* ctx) {
 void BacnetDriver::release() {
     std::lock_guard<std::mutex> lock(mutex_);
     
-    if (!context_) {
+    auto& context = BacnetContext::instance();
+    if (!context.is_initialized()) {
         return;  // 已经释放
     }
     
@@ -114,15 +109,8 @@ void BacnetDriver::release() {
         hot_config::stop();
     }
     
-    // 使用现有的清理函数
-    cleanup_context(context_.get());
-    
-    // 清除全局上下文指针
-    extern BacnetContext *g_ctx;
-    g_ctx = nullptr;
-    
-    // 释放上下文（智能指针自动管理）
-    context_.reset();
+    // 重置上下文（清理资源但不销毁对象）
+    context.reset();
     
     log_info("[BACnet][Driver] Driver released");
 }
@@ -134,7 +122,8 @@ void BacnetDriver::release() {
 int BacnetDriver::connect() {
     std::lock_guard<std::mutex> lock(mutex_);
     
-    if (!context_) {
+    auto& context = BacnetContext::instance();
+    if (!context.is_initialized()) {
         log_error("[BACnet][Driver] Cannot connect: driver not initialized");
         return PROTO_ERROR_INIT;
     }
@@ -142,7 +131,7 @@ int BacnetDriver::connect() {
     log_info("[BACnet][Driver] Connecting to BACnet network...");
     
     // 使用现有的连接函数
-    return connect_device(context_.get());
+    return connect_device(&context);
 }
 
 /* -------------------------------------------------------------------------- */
@@ -152,14 +141,15 @@ int BacnetDriver::connect() {
 void BacnetDriver::disconnect() {
     std::lock_guard<std::mutex> lock(mutex_);
     
-    if (!context_) {
+    auto& context = BacnetContext::instance();
+    if (!context.is_initialized()) {
         return;
     }
     
     log_info("[BACnet][Driver] Disconnecting from BACnet network...");
     
     // 使用现有的断开连接函数
-    disconnect_device(context_.get());
+    disconnect_device(&context);
 }
 
 /* -------------------------------------------------------------------------- */
@@ -169,13 +159,14 @@ void BacnetDriver::disconnect() {
 int BacnetDriver::read(bacnet_read_t* req) {
     std::lock_guard<std::mutex> lock(mutex_);
     
-    if (!context_) {
+    auto& context = BacnetContext::instance();
+    if (!context.is_initialized()) {
         log_error("[BACnet][Driver] Cannot read: driver not initialized");
         return PROTO_ERROR_INIT;
     }
     
     uint8_t invoke_id = 0;
-    return execute_read_property(context_.get(), req, &invoke_id);
+    return execute_read_property(&context, req, &invoke_id);
 }
 
 /* -------------------------------------------------------------------------- */
@@ -185,13 +176,14 @@ int BacnetDriver::read(bacnet_read_t* req) {
 int BacnetDriver::write(const bacnet_write_t* req) {
     std::lock_guard<std::mutex> lock(mutex_);
     
-    if (!context_) {
+    auto& context = BacnetContext::instance();
+    if (!context.is_initialized()) {
         log_error("[BACnet][Driver] Cannot write: driver not initialized");
         return PROTO_ERROR_INIT;
     }
     
     uint8_t invoke_id = 0;
-    return execute_write_property(context_.get(), req, &invoke_id);
+    return execute_write_property(&context, req, &invoke_id);
 }
 
 /* -------------------------------------------------------------------------- */
@@ -201,11 +193,12 @@ int BacnetDriver::write(const bacnet_write_t* req) {
 const bacnet_config_t* BacnetDriver::get_config() const {
     std::lock_guard<std::mutex> lock(mutex_);
     
-    if (!context_) {
+    auto& context = BacnetContext::instance();
+    if (!context.is_initialized()) {
         return nullptr;
     }
     
-    return &context_->config;
+    return &context.config;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -215,7 +208,8 @@ const bacnet_config_t* BacnetDriver::get_config() const {
 int BacnetDriver::reload_config() {
     std::lock_guard<std::mutex> lock(mutex_);
     
-    if (!context_) {
+    auto& context = BacnetContext::instance();
+    if (!context.is_initialized()) {
         log_error("[BACnet][Driver] Cannot reload config: driver not initialized");
         return PROTO_ERROR_INIT;
     }
@@ -231,7 +225,7 @@ int BacnetDriver::reload_config() {
     }
     
     // 应用新配置
-    context_->config = new_config;
+    context.config = new_config;
     
     log_info("[BACnet][Driver] Configuration reloaded successfully");
     

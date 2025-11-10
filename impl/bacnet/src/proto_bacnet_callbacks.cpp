@@ -9,8 +9,9 @@ namespace bacnet {
 
 void handle_iam_callback(uint8_t *service_request, uint16_t service_len, BACNET_ADDRESS *src)
 {
-    BacnetContext *context = g_ctx;
-    if (!context) {
+    auto& context = BacnetContext::instance();
+    if (!context.is_initialized()) {
+        log_warn("[BACnet] I-Am handler called but context not initialized");
         return;
     }
 
@@ -26,16 +27,16 @@ void handle_iam_callback(uint8_t *service_request, uint16_t service_len, BACNET_
     }
 
     // 检查是否是目标设备范围内的设备
-    if (device_id < context->target_device_start || device_id > context->target_device_end) {
+    if (device_id < context.target_device_start || device_id > context.target_device_end) {
         log_debug("[BACnet] Received I-Am from device {} (not in target range {}-{})", 
-                  device_id, context->target_device_start, context->target_device_end);
+                  device_id, context.target_device_start, context.target_device_end);
         return;
     }
 
     // 缓存设备地址
     address_add(device_id, max_apdu, src);
-    context->device_address_to_id[*src] = device_id;
-    context->target_found.store(true, std::memory_order_release);
+    context.device_address_to_id[*src] = device_id;
+    context.target_found.store(true, std::memory_order_release);
     
     log_info("[BACnet] Target device {} discovered and cached (max_apdu: {}, vendor: {})", 
              device_id, max_apdu, vendor_id);
@@ -48,9 +49,9 @@ void handle_iam_callback(uint8_t *service_request, uint16_t service_len, BACNET_
 void handle_read_property_ack(uint8_t *service_request, uint16_t service_len, 
                                BACNET_ADDRESS *src, BACNET_CONFIRMED_SERVICE_ACK_DATA *service_data)
 {
-    BacnetContext *context = g_ctx;
-    if (!context) {
-        log_error("[BACnet] ReadProperty Ack handler called but no context");
+    auto& context = BacnetContext::instance();
+    if (!context.is_initialized()) {
+        log_error("[BACnet] ReadProperty Ack handler called but context not initialized");
         return;
     }
 
@@ -66,19 +67,19 @@ void handle_read_property_ack(uint8_t *service_request, uint16_t service_len,
     }
 
     // 获取设备ID
-    uint32_t device_id = context->device_address_to_id[*src];
+    uint32_t device_id = context.device_address_to_id[*src];
 
     // 通过 invoke_id 查找 ObjectKey
     ObjectKey key;
     bool found_key = false;
     {
-        std::lock_guard<std::mutex> lock(context->invoke_id_to_key_mutex);
-        auto it = context->invoke_id_to_key.find(invoke_id);
-        if (it != context->invoke_id_to_key.end()) {
+        std::lock_guard<std::mutex> lock(context.invoke_id_to_key_mutex);
+        auto it = context.invoke_id_to_key.find(invoke_id);
+        if (it != context.invoke_id_to_key.end()) {
             key = it->second;
             found_key = true;
             // 用完删除映射
-            context->invoke_id_to_key.erase(it);
+            context.invoke_id_to_key.erase(it);
         }
     }
 
@@ -101,9 +102,9 @@ void handle_read_property_ack(uint8_t *service_request, uint16_t service_len,
 
     // 更新对象缓存
     {
-        std::lock_guard<std::mutex> lock(context->object_states_mutex);
-        auto it = context->object_states.find(key);
-        if (it != context->object_states.end()) {
+        std::lock_guard<std::mutex> lock(context.object_states_mutex);
+        auto it = context.object_states.find(key);
+        if (it != context.object_states.end()) {
             auto &state = it->second;
             
             // 存储数据到缓存
@@ -144,39 +145,61 @@ void handle_read_property_ack(uint8_t *service_request, uint16_t service_len,
 
 void handle_write_property_ack(BACNET_ADDRESS *src, uint8_t invoke_id)
 {
-    BacnetContext *context = g_ctx;
-    if (!context) {
-        log_error("[BACnet] WriteProperty Ack handler called but no context");
+    auto& context = BacnetContext::instance();
+    if (!context.is_initialized()) {
+        log_error("[BACnet] WriteProperty Ack handler called but context not initialized");
         return;
     }
 
     log_debug("[BACnet] WriteProperty Ack received (invoke_id: {})", invoke_id);
 
     // 通过 invoke_id 查找对应的待确认写操作
-    bool found_item = false;
     {
-        std::lock_guard<std::mutex> lock(context->write_pending_mutex);
+        std::lock_guard<std::mutex> lock(context.write_pending_mutex);
         
         // 使用哈希表查找：O(1) 操作
-        auto it = context->write_pending_map.find(invoke_id);
-        if (it != context->write_pending_map.end()) {
+        auto it = context.write_pending_map.find(invoke_id);
+        if (it != context.write_pending_map.end()) {
             auto &item = it->second;
             
-            // 找到了对应的队列项，标记为成功
-            item.status = PROTO_SUCCESS;
-            item.is_completed = true;  // 标记为已完成
-            log_info("[BACnet] WriteProperty successful (device: {}, object: {}-{}, property: {}, invoke_id: {})", 
+            // 构建值的字符串表示
+            std::string value_str;
+            switch (item.value.type) {
+                case BACNET_DATA_REAL:
+                    value_str = std::to_string(item.value.value.real_value);
+                    break;
+                case BACNET_DATA_BOOLEAN:
+                    value_str = item.value.value.boolean_value ? "TRUE" : "FALSE";
+                    break;
+                case BACNET_DATA_UNSIGNED:
+                    value_str = std::to_string(item.value.value.unsigned_value);
+                    break;
+                case BACNET_DATA_SIGNED:
+                    value_str = std::to_string(item.value.value.signed_value);
+                    break;
+                case BACNET_DATA_ENUM:
+                    value_str = std::to_string(item.value.value.enum_value);
+                    break;
+                default:
+                    value_str = "(type:" + std::to_string(item.value.type) + ")";
+                    break;
+            }
+            
+            // 记录详细的成功日志
+            log_info("[BACnet] ✅ WriteProperty successful (device: {}, {}-{}, {}, value: {}, priority: {}, invoke_id: {})", 
                      item.device_instance, 
                      bactext_object_type_name(item.object_type), 
                      item.object_instance,
                      bactext_property_name(item.property_id),
+                     value_str,
+                     item.priority,
                      invoke_id);
-            found_item = true;
+            
+            // 立即清除：因为没有 poll 接口，用户无法查询，直接删除避免内存泄漏
+            context.write_pending_map.erase(it);
+        } else {
+            log_warn("[BACnet] No matching write pending item found for invoke_id: {}", invoke_id);
         }
-    }
-    
-    if (!found_item) {
-        log_warn("[BACnet] No matching write pending item found for invoke_id: {}", invoke_id);
     }
 
     // 释放TSM资源
@@ -192,8 +215,8 @@ void handle_write_property_ack(BACNET_ADDRESS *src, uint8_t invoke_id)
 void handle_error_response(BACNET_ADDRESS *src, uint8_t invoke_id, 
                            BACNET_ERROR_CLASS error_class, BACNET_ERROR_CODE error_code)
 {
-    BacnetContext *context = g_ctx;
-    if (!context) {
+    auto& context = BacnetContext::instance();
+    if (!context.is_initialized()) {
         return;
     }
 
@@ -206,20 +229,20 @@ void handle_error_response(BACNET_ADDRESS *src, uint8_t invoke_id,
     ObjectKey key;
     bool found_key = false;
     {
-        std::lock_guard<std::mutex> lock(context->invoke_id_to_key_mutex);
-        auto it = context->invoke_id_to_key.find(invoke_id);
-        if (it != context->invoke_id_to_key.end()) {
+        std::lock_guard<std::mutex> lock(context.invoke_id_to_key_mutex);
+        auto it = context.invoke_id_to_key.find(invoke_id);
+        if (it != context.invoke_id_to_key.end()) {
             key = it->second;
             found_key = true;
-            context->invoke_id_to_key.erase(it);
+            context.invoke_id_to_key.erase(it);
         }
     }
 
     if (found_key) {
         // 读操作错误
-        std::lock_guard<std::mutex> lock(context->object_states_mutex);
-        auto it = context->object_states.find(key);
-        if (it != context->object_states.end()) {
+        std::lock_guard<std::mutex> lock(context.object_states_mutex);
+        auto it = context.object_states.find(key);
+        if (it != context.object_states.end()) {
             auto &state = it->second;
             state.status = PROTO_ERROR_READ;
             state.active_invoke_id = 0;  // 清除活跃请求
@@ -234,19 +257,48 @@ void handle_error_response(BACNET_ADDRESS *src, uint8_t invoke_id,
         }
     } else {
         // 检查写操作待确认表
-        std::lock_guard<std::mutex> lock_write(context->write_pending_mutex);
-        auto it = context->write_pending_map.find(invoke_id);
-        if (it != context->write_pending_map.end()) {
+        std::lock_guard<std::mutex> lock_write(context.write_pending_mutex);
+        auto it = context.write_pending_map.find(invoke_id);
+        if (it != context.write_pending_map.end()) {
             auto &item = it->second;
-            item.status = PROTO_ERROR_WRITE;
-            item.is_completed = true;
-            log_error("[BACnet] WriteProperty failed (device: {}, {}-{}, {}, error: {}, invoke_id: {})", 
+            
+            // 构建值的字符串表示
+            std::string value_str;
+            switch (item.value.type) {
+                case BACNET_DATA_REAL:
+                    value_str = std::to_string(item.value.value.real_value);
+                    break;
+                case BACNET_DATA_BOOLEAN:
+                    value_str = item.value.value.boolean_value ? "TRUE" : "FALSE";
+                    break;
+                case BACNET_DATA_UNSIGNED:
+                    value_str = std::to_string(item.value.value.unsigned_value);
+                    break;
+                case BACNET_DATA_SIGNED:
+                    value_str = std::to_string(item.value.value.signed_value);
+                    break;
+                case BACNET_DATA_ENUM:
+                    value_str = std::to_string(item.value.value.enum_value);
+                    break;
+                default:
+                    value_str = "(type:" + std::to_string(item.value.type) + ")";
+                    break;
+            }
+            
+            // 记录详细的错误日志
+            log_error("[BACnet] ❌ WriteProperty failed (device: {}, {}-{}, {}, value: {}, priority: {}, error: {} - {}, invoke_id: {})", 
                      item.device_instance,
                      bactext_object_type_name(item.object_type), 
                      item.object_instance,
                      bactext_property_name(item.property_id),
+                     value_str,
+                     item.priority,
+                     bactext_error_class_name(error_class),
                      bactext_error_code_name(error_code), 
                      invoke_id);
+            
+            // 立即清除：错误也要删除，避免内存泄漏
+            context.write_pending_map.erase(it);
         } else {
             log_warn("[BACnet] No matching request found for error response (invoke_id: {})", invoke_id);
         }
@@ -264,8 +316,8 @@ void handle_error_response(BACNET_ADDRESS *src, uint8_t invoke_id,
 
 void handle_abort_response(BACNET_ADDRESS *src, uint8_t invoke_id, uint8_t abort_reason, bool /*server*/)
 {
-    BacnetContext *context = g_ctx;
-    if (!context) {
+    auto& context = BacnetContext::instance();
+    if (!context.is_initialized()) {
         return;
     }
 
@@ -275,16 +327,16 @@ void handle_abort_response(BACNET_ADDRESS *src, uint8_t invoke_id, uint8_t abort
 
     // 清理反向映射和对象状态
     {
-        std::lock_guard<std::mutex> lock(context->invoke_id_to_key_mutex);
-        auto it = context->invoke_id_to_key.find(invoke_id);
-        if (it != context->invoke_id_to_key.end()) {
+        std::lock_guard<std::mutex> lock(context.invoke_id_to_key_mutex);
+        auto it = context.invoke_id_to_key.find(invoke_id);
+        if (it != context.invoke_id_to_key.end()) {
             ObjectKey key = it->second;
-            context->invoke_id_to_key.erase(it);
+            context.invoke_id_to_key.erase(it);
             
             // 清除对象状态中的活跃请求标记
-            std::lock_guard<std::mutex> lock_states(context->object_states_mutex);
-            auto state_it = context->object_states.find(key);
-            if (state_it != context->object_states.end()) {
+            std::lock_guard<std::mutex> lock_states(context.object_states_mutex);
+            auto state_it = context.object_states.find(key);
+            if (state_it != context.object_states.end()) {
                 state_it->second.active_invoke_id = 0;
                 state_it->second.status = PROTO_ERROR_READ;
             }
@@ -303,8 +355,8 @@ void handle_abort_response(BACNET_ADDRESS *src, uint8_t invoke_id, uint8_t abort
 
 void handle_reject_response(BACNET_ADDRESS *src, uint8_t invoke_id, uint8_t reject_reason)
 {
-    BacnetContext *context = g_ctx;
-    if (!context) {
+    auto& context = BacnetContext::instance();
+    if (!context.is_initialized()) {
         return;
     }
 
@@ -314,16 +366,16 @@ void handle_reject_response(BACNET_ADDRESS *src, uint8_t invoke_id, uint8_t reje
 
     // 清理反向映射和对象状态
     {
-        std::lock_guard<std::mutex> lock(context->invoke_id_to_key_mutex);
-        auto it = context->invoke_id_to_key.find(invoke_id);
-        if (it != context->invoke_id_to_key.end()) {
+        std::lock_guard<std::mutex> lock(context.invoke_id_to_key_mutex);
+        auto it = context.invoke_id_to_key.find(invoke_id);
+        if (it != context.invoke_id_to_key.end()) {
             ObjectKey key = it->second;
-            context->invoke_id_to_key.erase(it);
+            context.invoke_id_to_key.erase(it);
             
             // 清除对象状态中的活跃请求标记
-            std::lock_guard<std::mutex> lock_states(context->object_states_mutex);
-            auto state_it = context->object_states.find(key);
-            if (state_it != context->object_states.end()) {
+            std::lock_guard<std::mutex> lock_states(context.object_states_mutex);
+            auto state_it = context.object_states.find(key);
+            if (state_it != context.object_states.end()) {
                 state_it->second.active_invoke_id = 0;
                 state_it->second.status = PROTO_ERROR_READ;
             }

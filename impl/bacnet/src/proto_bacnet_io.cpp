@@ -217,26 +217,36 @@ proto_status_t execute_write_property(BacnetContext *context, const bacnet_write
         context->active_operation.invoke_id = invoke_id;
         set_operation_state(context, BACNET_OP_PENDING);
 
-        // 将请求添加到待确认哈希表
+        // 确定最终超时时间（三层优先级）
+        uint32_t final_timeout_ms = req->timeout_ms ? req->timeout_ms : 
+                                     context->config.bacnet.services.write_timeout_ms;
+        if (final_timeout_ms == 0) {
+            final_timeout_ms = bacnet::defaults::kWriteTimeoutMs;
+        }
+
+        // 将请求添加到待确认哈希表（保留完整信息用于详细日志）
         {
             std::lock_guard<std::mutex> lock_pending(context->write_pending_mutex);
             
             // 使用哈希表存储，invoke_id 作为 key，O(1) 插入和查找
-            BacnetContext::WriteBufferItem item{};
-            item.device_instance = req->device_instance;
-            item.object_type = req->object_type;
-            item.object_instance = req->object_instance;
-            item.property_id = req->property_id;
-            item.invoke_id = invoke_id;
-            item.status = PROTO_SUCCESS;  // 初始状态为成功，等待ACK或错误
-            item.is_completed = false;    // 标记为未完成
-            item.timestamp = std::chrono::steady_clock::now();
+            BacnetContext::WriteBufferItem item{
+                .device_instance = req->device_instance,
+                .object_type = req->object_type,
+                .object_instance = req->object_instance,
+                .property_id = req->property_id,
+                .invoke_id = invoke_id,
+                .value = req->value,           // 保留值用于详细日志
+                .priority = priority,          // 保留优先级
+                .array_index = array_index,    // 保留数组索引
+                .timestamp = std::chrono::steady_clock::now(),
+                .timeout_ms = final_timeout_ms // 保存三层优先级后的超时值
+            };
 
             // 插入哈希表：O(1) 操作
             context->write_pending_map[invoke_id] = item;
             
-            log_debug("[BACnet] Write request added to pending map (invoke_id: {}, map size: {})", 
-                     invoke_id, context->write_pending_map.size());
+            log_debug("[BACnet] Write request added to pending map (invoke_id: {}, timeout: {}ms, map size: {})", 
+                     invoke_id, final_timeout_ms, context->write_pending_map.size());
         }
 
         // 输出invoke_id

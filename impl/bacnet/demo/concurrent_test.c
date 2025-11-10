@@ -282,12 +282,13 @@ int main() {
     // 测试4: PLC高频轮询
     test_plc_polling();
 
-    printf("\n� 所有测试完成！\n");
+    printf("\n🎉 所有测试完成！\n");
     printf("💡 新缓存机制特点：\n");
     printf("   ✅ 基于对象的缓存，不依赖invoke_id\n");
     printf("   ✅ 支持PLC高频轮询场景\n");
     printf("   ✅ 激进策略：每次都发送请求，尽可能获取最新数据\n");
     printf("   ✅ 简化的API：不需要事件循环，直接同步调用\n");
+    printf("   ✅ 自动资源清理：程序退出时自动清理，无需手动调用\n");
 
     return 0;
 }

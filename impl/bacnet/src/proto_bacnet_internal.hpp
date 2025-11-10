@@ -338,37 +338,66 @@ struct ActiveOperation {
 };
 
 /* -------------------------------------------------------------------------- */
-/* 异步回调函数类型（预留，暂未使用）                                          */
+/* 异步回调函数类型定义                                                       */
 /* -------------------------------------------------------------------------- */
 
-// 当前采用事件队列方式，回调机制预留待后续扩展
-using AsyncCallback = std::function<void(proto_status_t status, void* userdata)>;
+// 异步回调函数类型（必须在 BacnetContext 之前定义）
+using AsyncCallback = std::function<void(proto_status_t, void*)>;
 
 /* -------------------------------------------------------------------------- */
-/* BACnet上下文类（使用现代C++特性实现）                                       */
+/* BACnet上下文类（单例模式 - 线程安全）                                       */
 /* -------------------------------------------------------------------------- */
 
 /**
- * @brief BACnet 上下文类 - 使用现代 C++ 特性
+ * @brief BACnet 上下文类 - 单例模式
  * 
  * 设计原则：
- * 1. RAII - 资源自动管理（智能指针、析构函数）
- * 2. 线程安全 - 原子变量 + 互斥锁 + 条件变量
- * 3. 事件驱动 - 异步操作 + 事件队列
- * 4. 模块化 - 职责清晰，易于扩展
+ * 1. 单例模式 - 全局唯一实例，线程安全（C++11 保证）
+ * 2. RAII - 资源自动管理（智能指针、析构函数）
+ * 3. 线程安全 - 原子变量 + 互斥锁 + 条件变量
+ * 4. 事件驱动 - 异步操作 + 事件队列
+ * 5. 可重置 - 支持热配置重载（reset 而非销毁）
  */
 class BacnetContext {
 public:
-    // 构造和析构
-    BacnetContext() = default;
-    ~BacnetContext() {
-        cleanup_resources();
+    // ============ 单例访问接口 ============
+    static BacnetContext& instance() {
+        static BacnetContext ctx;  // C++11 保证线程安全的初始化
+        return ctx;
     }
-    // 禁止拷贝，允许移动
+    
+    // 初始化上下文（相当于构造）
+    proto_status_t initialize(proto_ctx_t* ctx);
+    
+    // 重置上下文（用于热配置重载）
+    void reset();
+    
+    // 检查是否已初始化
+    bool is_initialized() const { 
+        return initialized_.load(std::memory_order_acquire); 
+    }
+    
+    // 禁止拷贝和移动
     BacnetContext(const BacnetContext&) = delete;
     BacnetContext& operator=(const BacnetContext&) = delete;
-    BacnetContext(BacnetContext&&) noexcept = default;
-    BacnetContext& operator=(BacnetContext&&) noexcept = default;
+    BacnetContext(BacnetContext&&) = delete;
+    BacnetContext& operator=(BacnetContext&&) = delete;
+
+private:
+    // 私有构造和析构（单例模式）
+    BacnetContext() = default;
+    ~BacnetContext() {
+        // ⚠️ 析构函数在程序退出时调用
+        // 不做任何清理，原因：
+        // 1. 其他全局对象（日志、BACnet 协议栈）可能已被销毁
+        // 2. 工作线程可能在访问 Context 成员，join 可能死锁或崩溃
+        // 3. 操作系统会自动回收所有资源（线程、内存、网络端口）
+        // 
+        // 完整的资源清理应该在程序退出前显式调用 driver.release()
+    }
+    
+    // 初始化标志
+    std::atomic<bool> initialized_{false};
 
 public:
     // 对象状态定义（用于缓存）
@@ -390,24 +419,29 @@ public:
     std::mutex invoke_id_to_key_mutex;
 
     // 写操作队列（写操作不需要缓存，仍用 invoke_id 作为 key）
+    // 写操作待确认项
+    // 保留必要字段用于详细日志记录、调试和超时清理
     struct WriteBufferItem {
-        uint32_t device_instance;
-        uint16_t object_type;
-        uint32_t object_instance;
-        uint32_t property_id;
-        bacnet_data_value_t value;
-        uint8_t priority;
-        uint32_t array_index;
-        uint32_t length;
-        proto_status_t status;
-        bool is_completed;  // 是否已由回调函数完成
-        std::chrono::steady_clock::time_point timestamp;
-        bacnet_write_t *original_request;  // 原始请求指针，用于事件关联
-        uint8_t invoke_id;  // BACnet协议的调用ID，用于精确匹配
-    };
+    // 🔍 基础标识字段（必须）
+    uint32_t device_instance;      // 设备实例
+    uint16_t object_type;          // 对象类型
+    uint32_t object_instance;      // 对象实例
+    uint32_t property_id;          // 属性 ID
+    uint8_t invoke_id;             // BACnet 调用 ID
+    
+    // 📊 详细信息字段（用于完整日志）
+    bacnet_data_value_t value;     // ✅ 写入的值（显示在日志中）
+    uint8_t priority;              // ✅ 写入优先级（显示在日志中）
+    uint32_t array_index;          // ✅ 数组索引（显示在日志中）
+    
+    // ⏱️ 时间戳和超时配置（用于超时检测）
+    std::chrono::steady_clock::time_point timestamp;
+    uint32_t timeout_ms;           // 该请求的超时时间（三层优先级后的最终值）
+};
     
     // 写操作待确认哈希表（invoke_id -> WriteBufferItem）
     // 用于跟踪已发送但未收到 ACK 的写请求，O(1) 查找复杂度
+    // 收到 ACK/Error 后立即删除，避免内存泄漏
     std::unordered_map<uint8_t, WriteBufferItem> write_pending_map;
     std::mutex write_pending_mutex;
     std::condition_variable write_pending_cv;
@@ -455,31 +489,63 @@ public:
     struct CallbackInfo {
         AsyncCallback callback;
         void* userdata;
+        
+        // 默认构造函数
+        CallbackInfo() : callback(nullptr), userdata(nullptr) {}
+        
+        // 带参数构造函数
+        CallbackInfo(AsyncCallback cb, void* ud) : callback(cb), userdata(ud) {}
     };
     std::mutex callback_mutex;
     std::unordered_map<std::string, CallbackInfo> callbacks;
 
 private:
     // 资源清理（析构时自动调用）
-    void cleanup_resources() {
-        if (worker_thread && worker_thread->joinable()) {
-            worker_stop.store(true, std::memory_order_release);
-            worker_thread->join();
+    void cleanup_resources() noexcept {
+        // ⚠️ 重要说明：
+        // 析构函数在程序退出时调用，此时其他全局对象（日志系统、BACnet 全局状态）
+        // 可能已被销毁。因此只做最基本的清理，避免访问可能无效的外部资源。
+        // 
+        // 完整的资源清理应该通过 reset() 在程序正常运行时完成。
+        // 程序退出时，操作系统会自动回收所有资源（内存、网络端口等）。
+        
+        if (!initialized_.load(std::memory_order_acquire)) {
+            return;  // 未初始化，无需清理
+        }
+        
+        try {
+            // 只停止工作线程 - 这是安全且必须的
+            if (worker_thread) {
+                worker_stop.store(true, std::memory_order_release);
+                if (worker_thread->joinable()) {
+                    worker_thread->join();
+                }
+                worker_thread.reset();
+            }
+            
+            // ❌ 不调用以下函数，避免 Bus error：
+            // - address_remove_device() - 可能访问已销毁的地址缓存
+            // - bip_cleanup() - 可能访问已销毁的 BIP 全局状态
+            // - datalink_cleanup() - 可能访问已销毁的 datalink 全局状态
+            // 
+            // 原因：程序退出时这些全局对象可能已被销毁，访问会导致 Bus error
+            // 操作系统会自动回收网络端口和内存资源
+            
+            initialized_.store(false, std::memory_order_release);
+            
+        } catch (...) {
+            // 析构函数不能抛出异常，静默处理
         }
     }
+    
+    // plc_mutex 用于保护初始化和重置操作
+    std::mutex plc_mutex;
 };
-
-/* -------------------------------------------------------------------------- */
-/* 全局实例管理（用于C回调函数访问）                                          */
-/* -------------------------------------------------------------------------- */
-
-extern BacnetContext *g_ctx;
 
 /* -------------------------------------------------------------------------- */
 /* 核心功能函数声明（proto_bacnet_core.cpp）                                  */
 /* -------------------------------------------------------------------------- */
 
-BacnetContext* get_context(proto_ctx_t *ctx);
 proto_status_t initialize_context(BacnetContext *context);
 void cleanup_context(BacnetContext *context);
 proto_status_t connect_device(BacnetContext *context);
@@ -597,11 +663,11 @@ public:
     // 写入操作
     int write(const bacnet_write_t* req);
     
-    // 获取上下文指针（兼容旧代码）
-    BacnetContext* get_context() { return context_.get(); }
+    // 获取上下文指针（直接返回单例）
+    BacnetContext* get_context() { return &BacnetContext::instance(); }
     
     // 检查是否已初始化
-    bool is_initialized() const { return context_ != nullptr; }
+    bool is_initialized() const { return BacnetContext::instance().is_initialized(); }
     
     // 获取配置
     const bacnet_config_t* get_config() const;
@@ -612,10 +678,17 @@ public:
 private:
     // 私有构造函数（单例模式）
     BacnetDriver() = default;
-    ~BacnetDriver();
-    
-    // 上下文智能指针（RAII 自动管理）
-    std::unique_ptr<BacnetContext> context_;
+    ~BacnetDriver() {
+        // ⚠️ Driver 是单例，析构函数在程序退出时调用
+        // 不做任何清理，原因同 BacnetContext：
+        // 1. Context 也是单例，可能已被销毁
+        // 2. 析构顺序不确定，可能导致访问已销毁对象
+        // 3. 操作系统会自动回收所有资源
+        // 
+        // 正确的清理方式：
+        // - C API 用户：在 main() 结束前调用 plc_proto_cleanup()
+        // - C++ API 用户：在程序退出前调用 driver.release()
+    }
     
     // 保护并发访问
     mutable std::mutex mutex_;
@@ -648,4 +721,11 @@ void set_polling_interval(uint32_t interval_ms);
 } // namespace hot_config
 
 } // namespace bacnet
+
+/* -------------------------------------------------------------------------- */
+/* 内部清理函数（不对外暴露）                                                 */
+/* -------------------------------------------------------------------------- */
+
+// 在 atexit() 中调用，用于程序退出时自动清理资源
+int bacnet_cleanup(void);
 

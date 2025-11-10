@@ -3,16 +3,60 @@
 namespace bacnet {
 
 /* -------------------------------------------------------------------------- */
-/* 全局上下文指针（用于C回调函数访问）- 通过驱动单例获取                       */
+/* BacnetContext 单例方法实现                                                  */
 /* -------------------------------------------------------------------------- */
 
-BacnetContext* get_global_context()
-{
-    return BacnetDriver::instance().get_context();
+proto_status_t BacnetContext::initialize(proto_ctx_t* ctx_param) {
+    std::lock_guard<std::mutex> lock(plc_mutex);
+    
+    if (initialized_.load(std::memory_order_acquire)) {
+        log_warn("[BACnet][Context] Already initialized, resetting...");
+        reset();
+    }
+    
+    log_info("[BACnet][Context] Initializing context...");
+    
+    this->ctx = ctx_param;
+    
+    // 调用原有的初始化函数
+    proto_status_t status = initialize_context(this);
+    if (status != PROTO_SUCCESS) {
+        log_error("[BACnet][Context] Initialization failed");
+        return status;
+    }
+    
+    initialized_.store(true, std::memory_order_release);
+    log_info("[BACnet][Context] Initialization completed");
+    
+    return PROTO_SUCCESS;
 }
 
-// 兼容旧代码的全局指针（回调函数使用）
-BacnetContext *g_ctx = nullptr;
+void BacnetContext::reset() {
+    std::lock_guard<std::mutex> lock(plc_mutex);
+    
+    log_info("[BACnet][Context] Resetting context...");
+    
+    // 清理资源
+    cleanup_context(this);
+    
+    // 清理所有状态
+    {
+        std::lock_guard<std::mutex> lock_obj(object_states_mutex);
+        object_states.clear();
+    }
+    {
+        std::lock_guard<std::mutex> lock_inv(invoke_id_to_key_mutex);
+        invoke_id_to_key.clear();
+    }
+    {
+        std::lock_guard<std::mutex> lock_write(write_pending_mutex);
+        write_pending_map.clear();
+    }
+    
+    initialized_.store(false, std::memory_order_release);
+    
+    log_info("[BACnet][Context] Reset completed");
+}
 
 /* -------------------------------------------------------------------------- */
 /* 状态管理函数                                                               */
@@ -126,7 +170,7 @@ void set_callback(BacnetContext *context, const char* type, AsyncCallback callba
     std::lock_guard<std::mutex> lock(context->callback_mutex);
     
     std::string key(type);
-    context->callbacks[key] = {callback, userdata};
+    context->callbacks[key] = BacnetContext::CallbackInfo(callback, userdata);
     
     log_debug("[BACnet] Callback set for type: {}", type);
 }
@@ -145,7 +189,9 @@ void trigger_callback(BacnetContext *context, const char* type, proto_status_t s
         log_debug("[BACnet] Triggering callback for type: {}, status: {}", type, static_cast<int>(status));
         
         // 在新线程中执行回调，避免阻塞当前线程
-        std::thread([callback = it->second.callback, status, userdata = it->second.userdata]() {
+        auto callback = it->second.callback;
+        auto userdata = it->second.userdata;
+        std::thread([callback, status, userdata]() {
             try {
                 callback(status, userdata);
             } catch (const std::exception& e) {
@@ -210,6 +256,10 @@ proto_status_t initialize_context(BacnetContext *context)
     
     context->target_found.store(false, std::memory_order_release);
     context->reconnect_attempts.store(0, std::memory_order_release);
+    
+    // 重置工作线程标志（重要！用于热配置重载后重新启动）
+    context->worker_stop.store(false, std::memory_order_release);
+    context->worker_running.store(false, std::memory_order_release);
 
     log_info("[BACnet] Context initialized successfully (target device range: {}-{})", 
              context->target_device_start, context->target_device_end);
@@ -623,3 +673,25 @@ int bacnet_reload_config(void)
 }
 
 } // extern "C"
+
+/* -------------------------------------------------------------------------- */
+/* 内部清理函数（C++ 链接，在 atexit 中调用）                                */
+/* -------------------------------------------------------------------------- */
+
+int bacnet_cleanup(void)
+{
+    log_info("[BACnet] Explicit cleanup requested");
+    
+    // 使用驱动单例的 release 方法清理资源
+    auto& driver = bacnet::BacnetDriver::instance();
+    
+    if (driver.is_initialized()) {
+        driver.release();
+        log_info("[BACnet] Cleanup completed successfully");
+    } else {
+        log_info("[BACnet] Driver not initialized, nothing to cleanup");
+    }
+    
+    return PROTO_SUCCESS;
+}
+
