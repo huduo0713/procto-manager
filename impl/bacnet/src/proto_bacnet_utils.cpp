@@ -179,8 +179,6 @@ void print_config_table(const bacnet_config_t *cfg, const bacnet::ConfigMetadata
 
 } // namespace
 
-extern "C" {
-
 // 全局配置元数据（用于追踪配置来源）
 static bacnet::ConfigMetadata g_config_metadata;
 
@@ -449,6 +447,8 @@ int bacnet_load_config_from_yaml(const char *yaml_path, bacnet_config_t *cfg)
 
     return 0;
 }
+
+extern "C" {
 
 /**
  * @brief 释放 bacnet_data_value_t 中动态分配的内存

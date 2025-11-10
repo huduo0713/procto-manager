@@ -723,9 +723,16 @@ void set_polling_interval(uint32_t interval_ms);
 } // namespace bacnet
 
 /* -------------------------------------------------------------------------- */
-/* 内部清理函数（不对外暴露）                                                 */
+/* 内部函数声明（不对外暴露，仅内部使用 - C++ 链接）                         */
 /* -------------------------------------------------------------------------- */
 
-// 在 atexit() 中调用，用于程序退出时自动清理资源
+// 配置加载函数（内部使用）
+int bacnet_load_config_from_yaml(const char *yaml_path, bacnet_config_t *cfg);
+
+// 配置重载函数（由热配置监控自动调用）
+int bacnet_reload_config(void);
+
+// 资源清理函数（在 atexit() 中调用）
 int bacnet_cleanup(void);
+
 
