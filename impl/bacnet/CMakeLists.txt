@@ -73,7 +73,11 @@ add_bacnet_executable(bacnet_demo demo/main.cc)
 #    文件：demo/concurrent_test.c
 #    功能：测试多线程并发读写 BACnet 对象的正确性和线程安全性
 # ------------------------------------------------------------------------------
-add_bacnet_executable(concurrent_test demo/concurrent_test.c)
+# 目标：concurrent_test
+#    描述：并发读写测试程序（新缓存机制）
+#    文件：demo/concurrent_test.cc
+#    链接：动态库 libproto_bacnet.so
+add_bacnet_executable(concurrent_test demo/concurrent_test.cc)
 
 # ------------------------------------------------------------------------------
 # 3. 热配置测试程序
@@ -86,6 +90,14 @@ add_bacnet_executable(hot_config_test demo/hot_config_test.cc)
 
 # 强制用 C++ 编译器编译（因为包含了 one_logger.hpp 等 C++ 头文件）
 set_source_files_properties(demo/hot_config_test.cc PROPERTIES LANGUAGE CXX)
+
+# ------------------------------------------------------------------------------
+# 4. 配置更新 API 测试程序
+#    文件：demo/config_update_test.cc
+#    功能：演示使用 plc_proto_config_update() API 动态修改配置文件
+#    用法：运行程序，观察配置文件的修改
+# ------------------------------------------------------------------------------
+add_bacnet_executable(config_update_test demo/config_update_test.cc)
 
 # ==============================================================================
 # 构建总结信息
@@ -106,6 +118,7 @@ message(STATUS "Executables to build:")
 message(STATUS "  - bacnet_demo       : Basic BACnet demo")
 message(STATUS "  - concurrent_test   : Concurrent read/write test")
 message(STATUS "  - hot_config_test   : Hot config reload test")
+message(STATUS "  - config_update_test: Config update API test")
 message(STATUS "==============================================================")
 
 # ==============================================================================

@@ -60,12 +60,12 @@ typedef struct {
 } bacnet_connection_config_t;
 
 typedef struct {
-    bool     enabled;                   /* 是否启用热配置监控 (默认 true) */
+    int8_t   enabled;                   /* 是否启用热配置监控 (-1=不更新, 0=false, 1=true) */
     uint32_t polling_interval_ms;       /* 配置文件轮询间隔 (毫秒，默认 1000) */
 } bacnet_hot_config_t;
 
 typedef struct {
-    bool                         enabled;      /* 是否启用 BACnet 协议栈 */
+    int8_t                       enabled;      /* 是否启用 BACnet 协议栈 (-1=不更新, 0=false, 1=true) */
     bacnet_discovery_config_t    discovery;    /* 设备发现配置 */
     bacnet_local_device_config_t local_device; /* 本地设备参数 */
     bacnet_network_config_t      network;      /* 网络层配置 */
@@ -78,6 +78,46 @@ typedef struct {
     bacnet_common_settings_t common;  /* 通用配置 */
     bacnet_protocol_config_t bacnet;  /* BACnet 协议配置 */
 } bacnet_config_t;
+
+/* -------------------------------------------------------------------------- */
+/* 配置初始化宏（用于 plc_proto_config_update）                               */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * @brief 初始化配置结构体（用于配置更新）
+ * 
+ * 使用方法：
+ *   bacnet_config_t cfg = BACNET_CONFIG_INIT;
+ *   cfg.bacnet.services.read_timeout_ms = 8000;  // 只修改这个
+ *   plc_proto_config_update(&cfg);
+ * 
+ * 说明：
+ * - 数值字段初始化为 0（表示不修改）
+ * - 布尔字段初始化为 -1（表示不修改）
+ * - 字符串字段初始化为空（表示不修改）
+ * - 用户可以直接传递 true/false，会自动转换为 1/0
+ * 
+ * 示例：
+ *   bacnet_config_t cfg = BACNET_CONFIG_INIT;
+ *   cfg.bacnet.enabled = true;  // 会转换为 1，更新为 true
+ *   cfg.bacnet.hot_config.enabled = false;  // 会转换为 0，更新为 false
+ *   // 不设置的字段保持为 -1，不会被更新
+ */
+#define BACNET_CONFIG_INIT { \
+    .common = {0}, \
+    .bacnet = { \
+        .enabled = -1, \
+        .discovery = {0}, \
+        .local_device = {0}, \
+        .network = {0}, \
+        .services = {0}, \
+        .connection = {0}, \
+        .hot_config = { \
+            .enabled = -1, \
+            .polling_interval_ms = 0 \
+        } \
+    } \
+}
 
 /* -------------------------------------------------------------------------- */
 /* 事件定义                                                                   */
@@ -125,7 +165,6 @@ typedef struct {
     /* 以下为可选字段，不填写则使用默认值 */
     int32_t             array_index;       /* 属性数组索引，-1 表示整个数组 (默认: -1) */
     uint32_t            timeout_ms;        /* 操作超时，0表示使用配置文件默认值 (默认: 0=使用配置) */
-    bool                check_only;        /* 是否仅检查队列而不发送新请求 (默认: false) */
     uint8_t             invoke_id;         /* 输出：BACnet调用ID，用于匹配响应 */
 } bacnet_read_t;
 
@@ -139,7 +178,6 @@ typedef struct {
         .value = (val_ptr), \
         .array_index = -1, \
         .timeout_ms = 0, \
-        .check_only = false, \
         .invoke_id = 0 \
     }
 
@@ -256,6 +294,48 @@ void bacnet_data_value_free(bacnet_data_value_t *value);
  *   }
  */
 const char* proto_status_to_string(proto_status_t status);
+
+/* -------------------------------------------------------------------------- */
+/* 配置管理 API                                                               */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * @brief 更新配置文件（config.yaml）
+ * @param cfg 要更新的配置数据（传入需要修改的字段）
+ * @return PROTO_SUCCESS(0) 表示成功，其他值表示失败
+ * 
+ * 功能说明：
+ * - 直接修改 config.yaml 文件
+ * - 如果启用了热配置监控，修改会在 1 秒内自动生效
+ * - 如果未启用热配置，需要重启程序生效
+ * 
+ * 注意事项：
+ * - 传入的配置结构体只需要填写需要修改的字段
+ * - 数值字段为 0 时不更新，字符串为空时不更新
+ * - 布尔字段为 -1 时不更新，0=false, 1=true (支持隐式转换)
+ * - 配置文件格式会自动保留（注释、缩进等）
+ * 
+ * 示例 1: 只更新数值字段
+ *   bacnet_config_t cfg = BACNET_CONFIG_INIT;
+ *   cfg.bacnet.services.read_timeout_ms = 8000;  // 修改读超时
+ *   cfg.bacnet.services.write_timeout_ms = 8000; // 修改写超时
+ *   int ret = config_update(&cfg);
+ * 
+ * 示例 2: 更新布尔字段
+ *   bacnet_config_t cfg = BACNET_CONFIG_INIT;
+ *   cfg.bacnet.enabled = true;  // 隐式转换为 1，更新为 true
+ *   cfg.bacnet.hot_config.enabled = false;  // 隐式转换为 0，更新为 false
+ *   int ret = config_update(&cfg);
+ * 
+ * 示例 3: 混合更新
+ *   bacnet_config_t cfg = BACNET_CONFIG_INIT;
+ *   strcpy(cfg.common.log_level, "info");
+ *   cfg.bacnet.services.read_timeout_ms = 5000;
+ *   cfg.bacnet.hot_config.enabled = true;  // 会更新
+ *   // cfg.bacnet.enabled 保持为 -1，不会更新
+ *   int ret = config_update(&cfg);
+ */
+int config_update(const bacnet_config_t *cfg);
 
 #ifdef __cplusplus
 }

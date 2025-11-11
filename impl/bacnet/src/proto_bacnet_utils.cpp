@@ -8,6 +8,7 @@
 #include <cstring>
 #include <cctype>
 #include <strings.h>
+#include <vector>
 
 extern "C" {
 #include "bacnet/bacdef.h"
@@ -670,6 +671,263 @@ const char* proto_status_to_string(proto_status_t status) {
         default:
             return "未知错误";
     }
+}
+
+/**
+ * @brief 更新配置文件（config.yaml）
+ * 
+ * 策略：
+ * 1. 读取现有配置文件的所有行
+ * 2. 查找匹配的配置项（通过键名 + section 上下文）
+ * 3. 替换对应的值（保留注释和格式）
+ * 4. 写回文件
+ * 
+ * 这种实现方式的优点：
+ * - 保留原文件格式（缩进、空行、注释）
+ * - 只修改需要改变的值
+ * - 不需要完整的 YAML 序列化器
+ */
+int config_update(const bacnet_config_t *cfg) {
+    if (!cfg) {
+        log_error("[BACnet][Config] config_update: cfg is NULL");
+        return PROTO_ERROR_PARAM;
+    }
+
+    const char *config_path = bacnet::defaults::kConfigPath;
+    
+    // 1. 读取现有配置文件
+    FILE *file = fopen(config_path, "r");
+    if (!file) {
+        log_error("[BACnet][Config] Failed to open config file: {}", config_path);
+        return PROTO_ERROR_INIT;
+    }
+
+    // 读取所有行到内存
+    std::vector<std::string> lines;
+    char buffer[512];
+    while (fgets(buffer, sizeof(buffer), file)) {
+        lines.emplace_back(buffer);
+    }
+    fclose(file);
+
+    // 2. 定义配置更新辅助函数
+    enum class CurrentSection {
+        None,
+        Common,
+        Bacnet,
+        Discovery,
+        LocalDevice,
+        Network,
+        Services,
+        Connection,
+        HotConfig
+    };
+
+    auto update_line = [](std::string &line, const char *key, const char *new_value) -> bool {
+        // 查找 "key:" 模式（允许前导空格）
+        size_t key_len = strlen(key);
+        size_t pos = line.find(key);
+        if (pos == std::string::npos) return false;
+        
+        // 确保是完整匹配（后面跟着 ':' 和空格）
+        size_t colon_pos = pos + key_len;
+        if (colon_pos >= line.length() || line[colon_pos] != ':') return false;
+        
+        // 查找值的起始位置（跳过冒号和空格）
+        size_t value_start = line.find_first_not_of(": \t", colon_pos);
+        if (value_start == std::string::npos) return false;
+        
+        // 查找注释位置（如果有）
+        size_t comment_pos = line.find('#', value_start);
+        
+        // 构造新行：保留缩进 + key + ": " + new_value + 空格 + 注释
+        std::string indent = line.substr(0, pos);
+        std::string new_line = indent + key + ": " + new_value;
+        
+        if (comment_pos != std::string::npos) {
+            // 添加固定宽度的空格（对齐注释）
+            size_t padding = 35;  // 目标列位置
+            if (new_line.length() < padding) {
+                new_line.append(padding - new_line.length(), ' ');
+            } else {
+                new_line += "  ";  // 至少两个空格
+            }
+            new_line += line.substr(comment_pos);
+        } else {
+            new_line += "\n";
+        }
+        
+        line = new_line;
+        return true;
+    };
+
+    // 3. 遍历所有行，更新匹配的配置项
+    CurrentSection current_section = CurrentSection::None;
+    int updates_count = 0;
+
+    for (auto &line : lines) {
+        // 检测 section 切换
+        if (line.find("common:") != std::string::npos) {
+            current_section = CurrentSection::Common;
+        } else if (line.find("bacnet:") != std::string::npos) {
+            current_section = CurrentSection::Bacnet;
+        } else if (line.find("discovery:") != std::string::npos) {
+            current_section = CurrentSection::Discovery;
+        } else if (line.find("local_device:") != std::string::npos) {
+            current_section = CurrentSection::LocalDevice;
+        } else if (line.find("network:") != std::string::npos) {
+            current_section = CurrentSection::Network;
+        } else if (line.find("services:") != std::string::npos) {
+            current_section = CurrentSection::Services;
+        } else if (line.find("connection:") != std::string::npos) {
+            current_section = CurrentSection::Connection;
+        } else if (line.find("hot_config:") != std::string::npos) {
+            current_section = CurrentSection::HotConfig;
+        }
+
+        // 根据当前 section 更新配置值
+        char value_buf[256];  // 扩大缓冲区以容纳长路径（最大 127 字节 + 引号 + null）
+        
+        switch (current_section) {
+            case CurrentSection::Common:
+                if (cfg->common.environment[0]) {
+                    snprintf(value_buf, sizeof(value_buf), "\"%s\"", cfg->common.environment);
+                    if (update_line(line, "environment", value_buf)) updates_count++;
+                }
+                if (cfg->common.log_level[0]) {
+                    snprintf(value_buf, sizeof(value_buf), "\"%s\"", cfg->common.log_level);
+                    if (update_line(line, "log_level", value_buf)) updates_count++;
+                }
+                if (cfg->common.log_file[0]) {
+                    snprintf(value_buf, sizeof(value_buf), "\"%s\"", cfg->common.log_file);
+                    if (update_line(line, "log_file", value_buf)) updates_count++;
+                }
+                break;
+
+            case CurrentSection::Bacnet:
+                // bacnet.enabled (默认不更新布尔字段)
+                break;
+
+            case CurrentSection::Discovery:
+                if (cfg->bacnet.discovery.target_device_start > 0) {
+                    snprintf(value_buf, sizeof(value_buf), "%u", cfg->bacnet.discovery.target_device_start);
+                    if (update_line(line, "target_device_start", value_buf)) updates_count++;
+                }
+                if (cfg->bacnet.discovery.target_device_end > 0) {
+                    snprintf(value_buf, sizeof(value_buf), "%u", cfg->bacnet.discovery.target_device_end);
+                    if (update_line(line, "target_device_end", value_buf)) updates_count++;
+                }
+                if (cfg->bacnet.discovery.whois_retry > 0) {
+                    snprintf(value_buf, sizeof(value_buf), "%u", cfg->bacnet.discovery.whois_retry);
+                    if (update_line(line, "whois_retry", value_buf)) updates_count++;
+                }
+                if (cfg->bacnet.discovery.response_timeout_ms > 0) {
+                    snprintf(value_buf, sizeof(value_buf), "%u", cfg->bacnet.discovery.response_timeout_ms);
+                    if (update_line(line, "response_timeout_ms", value_buf)) updates_count++;
+                }
+                break;
+
+            case CurrentSection::LocalDevice:
+                if (cfg->bacnet.local_device.instance_id > 0) {
+                    snprintf(value_buf, sizeof(value_buf), "%u", cfg->bacnet.local_device.instance_id);
+                    if (update_line(line, "instance_id", value_buf)) updates_count++;
+                }
+                if (cfg->bacnet.local_device.max_apdu > 0) {
+                    snprintf(value_buf, sizeof(value_buf), "%u", cfg->bacnet.local_device.max_apdu);
+                    if (update_line(line, "max_apdu", value_buf)) updates_count++;
+                }
+                break;
+
+            case CurrentSection::Network:
+                if (cfg->bacnet.network.interface_name[0]) {
+                    snprintf(value_buf, sizeof(value_buf), "\"%s\"", cfg->bacnet.network.interface_name);
+                    if (update_line(line, "interface", value_buf)) updates_count++;
+                }
+                if (cfg->bacnet.network.port > 0) {
+                    snprintf(value_buf, sizeof(value_buf), "%u", cfg->bacnet.network.port);
+                    if (update_line(line, "port", value_buf)) updates_count++;
+                }
+                if (cfg->bacnet.network.broadcast_address[0]) {
+                    snprintf(value_buf, sizeof(value_buf), "\"%s\"", cfg->bacnet.network.broadcast_address);
+                    if (update_line(line, "broadcast_address", value_buf)) updates_count++;
+                }
+                break;
+
+            case CurrentSection::Services:
+                if (cfg->bacnet.services.read_timeout_ms > 0) {
+                    snprintf(value_buf, sizeof(value_buf), "%u", cfg->bacnet.services.read_timeout_ms);
+                    if (update_line(line, "read_timeout_ms", value_buf)) updates_count++;
+                }
+                if (cfg->bacnet.services.write_timeout_ms > 0) {
+                    snprintf(value_buf, sizeof(value_buf), "%u", cfg->bacnet.services.write_timeout_ms);
+                    if (update_line(line, "write_timeout_ms", value_buf)) updates_count++;
+                }
+                if (cfg->bacnet.services.default_priority > 0) {
+                    snprintf(value_buf, sizeof(value_buf), "%u", cfg->bacnet.services.default_priority);
+                    if (update_line(line, "default_priority", value_buf)) updates_count++;
+                }
+                if (cfg->bacnet.services.cache_expiry_ms > 0) {
+                    snprintf(value_buf, sizeof(value_buf), "%u", cfg->bacnet.services.cache_expiry_ms);
+                    if (update_line(line, "cache_expiry_ms", value_buf)) updates_count++;
+                }
+                snprintf(value_buf, sizeof(value_buf), "%u", cfg->bacnet.services.cache_strategy);
+                if (update_line(line, "cache_strategy", value_buf)) updates_count++;
+                
+                if (cfg->bacnet.services.datalink_maintenance_ms > 0) {
+                    snprintf(value_buf, sizeof(value_buf), "%u", cfg->bacnet.services.datalink_maintenance_ms);
+                    if (update_line(line, "datalink_maintenance_ms", value_buf)) updates_count++;
+                }
+                break;
+
+            case CurrentSection::Connection:
+                if (cfg->bacnet.connection.max_reconnect_attempts > 0) {
+                    snprintf(value_buf, sizeof(value_buf), "%u", cfg->bacnet.connection.max_reconnect_attempts);
+                    if (update_line(line, "max_reconnect_attempts", value_buf)) updates_count++;
+                }
+                if (cfg->bacnet.connection.reconnect_interval_ms > 0) {
+                    snprintf(value_buf, sizeof(value_buf), "%u", cfg->bacnet.connection.reconnect_interval_ms);
+                    if (update_line(line, "reconnect_interval_ms", value_buf)) updates_count++;
+                }
+                break;
+
+            case CurrentSection::HotConfig:
+                // hot_config.enabled (默认不更新布尔字段)
+                
+                if (cfg->bacnet.hot_config.polling_interval_ms > 0) {
+                    snprintf(value_buf, sizeof(value_buf), "%u", cfg->bacnet.hot_config.polling_interval_ms);
+                    if (update_line(line, "polling_interval_ms", value_buf)) updates_count++;
+                }
+                break;
+
+            default:
+                break;
+        }
+    }
+
+    // 4. 写回文件
+    file = fopen(config_path, "w");
+    if (!file) {
+        log_error("[BACnet][Config] Failed to open config file for writing: {}", config_path);
+        return PROTO_ERROR_WRITE;
+    }
+
+    for (const auto &line : lines) {
+        fputs(line.c_str(), file);
+    }
+    fclose(file);
+
+    log_info("[BACnet][Config] Configuration updated successfully ({} items changed)", updates_count);
+    log_info("[BACnet][Config] File: {}", config_path);
+    
+    // 如果启用了热配置，修改会自动生效
+    if (cfg->bacnet.hot_config.enabled) {
+        log_info("[BACnet][Config] Hot config is enabled, changes will take effect within {} ms", 
+                 cfg->bacnet.hot_config.polling_interval_ms);
+    } else {
+        log_warn("[BACnet][Config] Hot config is disabled, please restart the application for changes to take effect");
+    }
+
+    return PROTO_SUCCESS;
 }
 
 } // extern "C"

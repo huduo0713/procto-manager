@@ -1615,6 +1615,376 @@ int bacnet_reload_config(void);
 
 ---
 
+### 🔧 配置更新 API
+
+BACnet 驱动提供了 `config_update()` API，用于在运行时动态修改 `config.yaml` 文件。修改会直接写入配置文件，如果启用了热配置监控，修改会在 1 秒内自动生效。
+
+#### `config_update()` - 更新配置文件 ⚙️
+
+```c
+int config_update(const bacnet_config_t *cfg);
+```
+
+**功能**：直接修改配置文件（config.yaml），支持部分更新
+
+**参数**：
+- `cfg` - 配置结构体指针（只需填写需要修改的字段）
+
+**返回值**：
+- `PROTO_SUCCESS (0)` - 成功
+- `PROTO_ERROR_PARAM` - 参数错误（cfg 为 NULL）
+- `PROTO_ERROR_INIT` - 无法打开配置文件
+- `PROTO_ERROR_WRITE` - 无法写入配置文件
+
+**核心特性**：
+
+| 特性 | 说明 | 优势 |
+|------|------|------|
+| ✅ **部分更新** | 只修改指定字段，其他保持不变 | 灵活精确 |
+| ✅ **格式保留** | 保留原文件的注释、缩进、空行 | 可读性好 |
+| ✅ **自动生效** | 配合热配置监控，修改后自动重载 | 零停机时间 |
+| ✅ **布尔字段支持** | 使用 `-1` 表示不更新，`0`=false, `1`=true | 支持隐式转换 |
+| ✅ **线程安全** | 可在运行时任意线程调用 | 并发友好 |
+
+#### 📋 字段更新规则
+
+| 字段类型 | 不更新条件 | 更新条件 | 示例 |
+|----------|-----------|---------|------|
+| **数值字段** | 值为 `0` | 值 > `0` | `read_timeout_ms = 8000` |
+| **字符串字段** | 首字符为 `\0` | 非空字符串 | `strcpy(cfg.common.log_level, "info")` |
+| **布尔字段** | 值为 `-1` | 值为 `0` 或 `1` | `enabled = 1` (true) |
+
+**🔑 关键点**：
+- **必须使用 `BACNET_CONFIG_INIT` 宏初始化**，确保布尔字段默认为 `-1`
+- **数值字段为 0 时不会更新**配置文件
+- **布尔字段使用 `int8_t` 类型**，支持 `true/false` 隐式转换
+
+#### 📝 使用示例
+
+**示例 1：修改超时配置**
+
+```c
+#include "proto_bacnet.h"
+
+int main() {
+    // ✅ 必须使用宏初始化（布尔字段默认为 -1）
+    bacnet_config_t cfg = BACNET_CONFIG_INIT;
+    
+    // 只填写需要修改的字段
+    cfg.bacnet.services.read_timeout_ms = 8000;
+    cfg.bacnet.services.write_timeout_ms = 8000;
+    
+    int ret = config_update(&cfg);
+    if (ret != PROTO_SUCCESS) {
+        printf("❌ 配置更新失败: %d\n", ret);
+        return -1;
+    }
+    
+    printf("✅ 配置更新成功！\n");
+    // 如果启用了热配置，修改会在 1 秒内自动生效
+    return 0;
+}
+```
+
+**示例 2：修改设备发现配置**
+
+```c
+bacnet_config_t cfg = BACNET_CONFIG_INIT;
+
+// 修改发现范围
+cfg.bacnet.discovery.target_device_start = 6000;
+cfg.bacnet.discovery.target_device_end = 6100;
+cfg.bacnet.discovery.whois_retry = 5;
+
+int ret = config_update(&cfg);
+```
+
+**示例 3：修改布尔字段**
+
+```c
+bacnet_config_t cfg = BACNET_CONFIG_INIT;
+
+// 方式 1：直接传布尔值（推荐）
+cfg.bacnet.hot_config.enabled = true;  // 隐式转换为 1
+
+// 方式 2：显式使用数值
+cfg.bacnet.hot_config.enabled = 1;     // 1 = true
+// cfg.bacnet.hot_config.enabled = 0;  // 0 = false
+// cfg.bacnet.hot_config.enabled = -1; // -1 = 不更新（默认值）
+
+cfg.bacnet.hot_config.polling_interval_ms = 500;
+
+int ret = config_update(&cfg);
+```
+
+**示例 4：批量更新多个字段**
+
+```c
+bacnet_config_t cfg = BACNET_CONFIG_INIT;
+
+// Common 配置
+strcpy(cfg.common.log_level, "info");
+
+// Services 配置
+cfg.bacnet.services.read_timeout_ms = 5000;
+cfg.bacnet.services.write_timeout_ms = 5000;
+cfg.bacnet.services.cache_strategy = 1;  // 保守策略
+
+// Connection 配置
+cfg.bacnet.connection.max_reconnect_attempts = 10;
+cfg.bacnet.connection.reconnect_interval_ms = 2000;
+
+int ret = config_update(&cfg);
+if (ret == PROTO_SUCCESS) {
+    printf("✅ 所有配置更新成功\n");
+}
+```
+
+#### 🎯 可配置字段列表
+
+**Common（通用配置）**
+
+```c
+cfg.common.environment[BACNET_MAX_ENV_LEN];        // 运行环境
+cfg.common.log_level[BACNET_MAX_LOG_LEVEL_LEN];   // 日志级别
+cfg.common.log_file[BACNET_MAX_LOG_PATH_LEN];     // 日志文件路径
+```
+
+**Discovery（设备发现配置）**
+
+```c
+cfg.bacnet.discovery.target_device_start;    // 目标设备范围起始
+cfg.bacnet.discovery.target_device_end;      // 目标设备范围结束
+cfg.bacnet.discovery.whois_retry;            // Who-Is 重试次数
+cfg.bacnet.discovery.response_timeout_ms;    // I-Am 响应超时
+```
+
+**LocalDevice（本地设备配置）**
+
+```c
+cfg.bacnet.local_device.instance_id;         // 本地设备实例 ID
+cfg.bacnet.local_device.max_apdu;            // 最大 APDU 长度
+```
+
+**Network（网络配置）**
+
+```c
+cfg.bacnet.network.interface_name[BACNET_MAX_INTERFACE_LEN];      // 网络接口
+cfg.bacnet.network.port;                                           // UDP 端口
+cfg.bacnet.network.broadcast_address[BACNET_MAX_ADDRESS_LEN];     // 广播地址
+```
+
+**Services（服务配置）**
+
+```c
+cfg.bacnet.services.read_timeout_ms;          // 读超时
+cfg.bacnet.services.write_timeout_ms;         // 写超时
+cfg.bacnet.services.default_priority;         // 默认优先级
+cfg.bacnet.services.cache_expiry_ms;          // 缓存过期时间
+cfg.bacnet.services.cache_strategy;           // 缓存策略 (0=激进, 1=保守)
+cfg.bacnet.services.datalink_maintenance_ms;  // DataLink 维护间隔
+```
+
+**Connection（连接管理配置）**
+
+```c
+cfg.bacnet.connection.max_reconnect_attempts;  // 最大重连次数
+cfg.bacnet.connection.reconnect_interval_ms;   // 重连间隔
+```
+
+**HotConfig（热配置监控）**
+
+```c
+cfg.bacnet.hot_config.enabled;                 // 是否启用热配置 (-1=不更新, 0=false, 1=true)
+cfg.bacnet.hot_config.polling_interval_ms;     // 轮询间隔
+```
+
+#### ⚠️ 注意事项
+
+**1. 必须使用初始化宏**
+
+```c
+// ✅ 正确：使用 BACNET_CONFIG_INIT 宏
+bacnet_config_t cfg = BACNET_CONFIG_INIT;
+cfg.bacnet.services.read_timeout_ms = 8000;
+config_update(&cfg);
+
+// ❌ 错误：未初始化，布尔字段包含随机值
+bacnet_config_t cfg;  // 未初始化！
+cfg.bacnet.services.read_timeout_ms = 8000;
+config_update(&cfg);  // 可能会意外修改布尔字段
+```
+
+**2. 字段判断规则**
+
+```c
+bacnet_config_t cfg = BACNET_CONFIG_INIT;
+
+// 数值字段为 0 时不会修改
+cfg.bacnet.services.read_timeout_ms = 0;  // ❌ 不会修改配置文件
+
+// 数值字段 > 0 时会修改
+cfg.bacnet.services.read_timeout_ms = 8000;  // ✅ 会修改配置文件
+
+// 布尔字段为 -1 时不会修改
+cfg.bacnet.hot_config.enabled = -1;  // ❌ 不会修改配置文件（默认值）
+
+// 布尔字段为 0 或 1 时会修改
+cfg.bacnet.hot_config.enabled = true;   // ✅ 会修改配置文件（隐式转换为 1）
+cfg.bacnet.hot_config.enabled = false;  // ✅ 会修改配置文件（隐式转换为 0）
+```
+
+**3. 热配置生效时间**
+
+```c
+// 修改配置
+int ret = config_update(&cfg);
+
+// 如果启用了热配置监控，等待 1-2 秒后生效
+sleep(2);  // 等待热配置监控检测到文件变化
+```
+
+**4. 文件格式保留**
+
+API 会保留配置文件的：
+- ✅ 注释（包括行内注释和独立注释行）
+- ✅ 缩进和空行
+- ✅ 配置项顺序
+
+**原文件**：
+```yaml
+services:
+  read_timeout_ms: 6000       # 读操作超时时间
+  write_timeout_ms: 6000      # 写操作超时时间
+```
+
+**修改后**：
+```yaml
+services:
+  read_timeout_ms: 8000       # 读操作超时时间
+  write_timeout_ms: 8000      # 写操作超时时间
+```
+
+#### 🧪 测试程序
+
+**编译测试程序**：
+
+```bash
+cd build
+make config_update_test
+```
+
+**运行测试**：
+
+```bash
+./config_update_test
+```
+
+**测试场景**：
+
+测试程序演示了以下场景：
+1. ✅ 更新服务超时配置
+2. ✅ 更新设备发现配置
+3. ✅ 更新缓存策略
+4. ✅ 更新热配置监控参数（布尔字段）
+5. ✅ 批量更新多个配置项
+
+#### 🔄 与热配置监控的配合
+
+**推荐工作流程**：
+
+```c
+// 1. 启用热配置监控
+bacnet_config_t cfg1 = BACNET_CONFIG_INIT;
+cfg1.bacnet.hot_config.enabled = true;
+cfg1.bacnet.hot_config.polling_interval_ms = 1000;
+config_update(&cfg1);
+
+// 2. 初始化 BACnet 驱动（会自动启动热配置监控）
+// 驱动会自动初始化，无需手动调用 init
+
+// 3. 运行时动态修改配置
+bacnet_config_t cfg2 = BACNET_CONFIG_INIT;
+cfg2.bacnet.services.read_timeout_ms = 8000;
+config_update(&cfg2);  // 修改会在 1 秒内自动生效
+```
+
+**禁用热配置监控**：
+
+如果不需要自动重载，可以禁用：
+
+```c
+bacnet_config_t cfg = BACNET_CONFIG_INIT;
+cfg.bacnet.hot_config.enabled = false;  // 0 也可以
+config_update(&cfg);
+
+// 此时需要重启程序才能使配置生效
+```
+
+#### 🐛 错误处理
+
+**完整的错误处理示例**：
+
+```c
+int ret = config_update(&cfg);
+
+switch (ret) {
+    case PROTO_SUCCESS:
+        printf("✅ 配置更新成功\n");
+        break;
+        
+    case PROTO_ERROR_PARAM:
+        printf("❌ 参数错误：cfg 指针为 NULL\n");
+        break;
+        
+    case PROTO_ERROR_INIT:
+        printf("❌ 无法打开配置文件 %s\n", "../config.yaml");
+        break;
+        
+    case PROTO_ERROR_WRITE:
+        printf("❌ 无法写入配置文件\n");
+        break;
+        
+    default:
+        printf("❌ 未知错误：%d\n", ret);
+        break;
+}
+```
+
+#### 💡 最佳实践
+
+1. **总是初始化为 `BACNET_CONFIG_INIT`**
+   ```c
+   bacnet_config_t cfg = BACNET_CONFIG_INIT;  // ✅ 推荐
+   ```
+
+2. **只填写需要修改的字段**
+   ```c
+   cfg.bacnet.services.read_timeout_ms = 8000;  // 只修改这一个
+   ```
+
+3. **检查返回值**
+   ```c
+   if (ret != PROTO_SUCCESS) {
+       log_error("配置更新失败: {}", ret);
+   }
+   ```
+
+4. **配合热配置使用**
+   ```c
+   // 启用热配置，修改会自动生效
+   cfg.bacnet.hot_config.enabled = true;
+   ```
+
+5. **记录日志**
+   ```c
+   log_info("正在更新配置：read_timeout_ms={}", cfg.bacnet.services.read_timeout_ms);
+   int ret = config_update(&cfg);
+   log_info("配置更新结果：{}", ret);
+   ```
+
+---
+
 ## 🔧 配置说明
 
 ### 📄 配置文件位置

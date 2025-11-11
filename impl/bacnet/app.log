@@ -1,0 +1,109 @@
+[2025-11-11 13:47:27.228][info][566016][:] === BACnet PLC 异步读写测试开始 ===
+[2025-11-11 13:47:27.228][info][566016][main.cc:17] 开始测试BACnet PLC异步读写功能
+[2025-11-11 13:47:27.228][info][566016][main.cc:39] 准备调用 plc_proto_read，设备实例: 5678
+[2025-11-11 13:47:27.229][debug][566016][proto_bacnet_core.cpp:481] [PLC] plc_proto_read: device=5678, analog-value-1, present-value
+[2025-11-11 13:47:27.229][info][566016][proto_bacnet_core.cpp:435] [PLC] Initializing BACnet driver...
+[2025-11-11 13:47:27.229][info][566016][proto_bacnet_driver.cpp:41] [BACnet][Driver] Initializing driver...
+[2025-11-11 13:47:27.229][info][566016][proto_bacnet_core.cpp:17] [BACnet][Context] Initializing context...
+[2025-11-11 13:47:27.229][debug][566016][proto_bacnet_core.cpp:214] [BACnet] Loading configuration from ../config.yaml
+[2025-11-11 13:47:27.229][warning][566016][proto_bacnet_utils.cpp:229] [BACnet][Config] Cannot open config file '../config.yaml', using default values
+[2025-11-11 13:47:27.229][info][566016][proto_bacnet_utils.cpp:69] ┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+[2025-11-11 13:47:27.229][info][566016][proto_bacnet_utils.cpp:70] ┃          BACnet Configuration Loaded                         ┃
+[2025-11-11 13:47:27.229][info][566016][proto_bacnet_utils.cpp:71] ┣━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┫
+[2025-11-11 13:47:27.229][info][566016][proto_bacnet_utils.cpp:74] ┃ [Common]                                                     ┃
+[2025-11-11 13:47:27.229][info][566016][proto_bacnet_utils.cpp:75] ┃   environment        : development           [DEFAULT] ┃
+[2025-11-11 13:47:27.229][info][566016][proto_bacnet_utils.cpp:77] ┃   log_level          : debug                 [DEFAULT] ┃
+[2025-11-11 13:47:27.229][info][566016][proto_bacnet_utils.cpp:79] ┃   log_file           : bacnet.log            [DEFAULT] ┃
+[2025-11-11 13:47:27.229][info][566016][proto_bacnet_utils.cpp:82] ┣━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┫
+[2025-11-11 13:47:27.229][info][566016][proto_bacnet_utils.cpp:85] ┃ [BACnet]                                                     ┃
+[2025-11-11 13:47:27.229][info][566016][proto_bacnet_utils.cpp:86] ┃   enabled            : true                  [DEFAULT] ┃
+[2025-11-11 13:47:27.229][info][566016][proto_bacnet_utils.cpp:90] ┣━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┫
+[2025-11-11 13:47:27.229][info][566016][proto_bacnet_utils.cpp:93] ┃ [BACnet.Discovery]                                           ┃
+[2025-11-11 13:47:27.229][info][566016][proto_bacnet_utils.cpp:94] ┃   target_device_start:                 5678  [DEFAULT] ┃
+[2025-11-11 13:47:27.229][info][566016][proto_bacnet_utils.cpp:97] ┃   target_device_end  :                 5678  [DEFAULT] ┃
+[2025-11-11 13:47:27.229][info][566016][proto_bacnet_utils.cpp:100] ┃   whois_retry        :                    3  [DEFAULT] ┃
+[2025-11-11 13:47:27.229][info][566016][proto_bacnet_utils.cpp:103] ┃   response_timeout_ms:                 5000  [DEFAULT] ┃
+[2025-11-11 13:47:27.229][info][566016][proto_bacnet_utils.cpp:107] ┣━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┫
+[2025-11-11 13:47:27.229][info][566016][proto_bacnet_utils.cpp:110] ┃ [BACnet.LocalDevice]                                         ┃
+[2025-11-11 13:47:27.229][info][566016][proto_bacnet_utils.cpp:111] ┃   instance_id        :              4194303  [DEFAULT] ┃
+[2025-11-11 13:47:27.229][info][566016][proto_bacnet_utils.cpp:114] ┃   max_apdu           :                 1476  [DEFAULT] ┃
+[2025-11-11 13:47:27.229][info][566016][proto_bacnet_utils.cpp:118] ┣━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┫
+[2025-11-11 13:47:27.229][info][566016][proto_bacnet_utils.cpp:121] ┃ [BACnet.Network]                                             ┃
+[2025-11-11 13:47:27.229][info][566016][proto_bacnet_utils.cpp:122] ┃   interface          : (auto)                [DEFAULT] ┃
+[2025-11-11 13:47:27.229][info][566016][proto_bacnet_utils.cpp:125] ┃   port               :                47808  [DEFAULT] ┃
+[2025-11-11 13:47:27.229][info][566016][proto_bacnet_utils.cpp:128] ┃   broadcast_address  : 255.255.255.255       [DEFAULT] ┃
+[2025-11-11 13:47:27.229][info][566016][proto_bacnet_utils.cpp:132] ┣━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┫
+[2025-11-11 13:47:27.229][info][566016][proto_bacnet_utils.cpp:135] ┃ [BACnet.Services]                                            ┃
+[2025-11-11 13:47:27.229][info][566016][proto_bacnet_utils.cpp:136] ┃   read_timeout_ms    :                 6000  [DEFAULT] ┃
+[2025-11-11 13:47:27.229][info][566016][proto_bacnet_utils.cpp:139] ┃   write_timeout_ms   :                 6000  [DEFAULT] ┃
+[2025-11-11 13:47:27.229][info][566016][proto_bacnet_utils.cpp:142] ┃   default_priority   :                    8  [DEFAULT] ┃
+[2025-11-11 13:47:27.229][info][566016][proto_bacnet_utils.cpp:145] ┃   cache_expiry_ms    :                 1000  [DEFAULT] ┃
+[2025-11-11 13:47:27.229][info][566016][proto_bacnet_utils.cpp:148] ┃   cache_strategy     :                    0  [DEFAULT] ┃
+[2025-11-11 13:47:27.229][info][566016][proto_bacnet_utils.cpp:151] ┃   datalink_maint_ms  :                 1000  [DEFAULT] ┃
+[2025-11-11 13:47:27.229][info][566016][proto_bacnet_utils.cpp:155] ┣━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┫
+[2025-11-11 13:47:27.229][info][566016][proto_bacnet_utils.cpp:158] ┃ [BACnet.Connection]                                          ┃
+[2025-11-11 13:47:27.229][info][566016][proto_bacnet_utils.cpp:159] ┃   max_reconnect_attempts:                 5  [DEFAULT] ┃
+[2025-11-11 13:47:27.229][info][566016][proto_bacnet_utils.cpp:162] ┃   reconnect_interval_ms :              3000  [DEFAULT] ┃
+[2025-11-11 13:47:27.229][info][566016][proto_bacnet_utils.cpp:166] ┣━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┫
+[2025-11-11 13:47:27.229][info][566016][proto_bacnet_utils.cpp:169] ┃ [BACnet.HotConfig]                                           ┃
+[2025-11-11 13:47:27.229][info][566016][proto_bacnet_utils.cpp:170] ┃   enabled            : true                  [DEFAULT] ┃
+[2025-11-11 13:47:27.229][info][566016][proto_bacnet_utils.cpp:173] ┃   polling_interval_ms:                 1000  [DEFAULT] ┃
+[2025-11-11 13:47:27.229][info][566016][proto_bacnet_utils.cpp:177] ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
+[2025-11-11 13:47:27.229][debug][566016][proto_bacnet_core.cpp:221] [BACnet] Configuration loaded successfully
+[2025-11-11 13:47:27.229][debug][566016][proto_bacnet_core.cpp:233] [BACnet] Cache strategy: Aggressive (always send requests) (expiry: 1000ms)
+[2025-11-11 13:47:27.229][debug][566016][proto_bacnet_core.cpp:237] [BACnet] Initializing BACnet protocol stack...
+[2025-11-11 13:47:27.229][debug][566016][proto_bacnet_core.cpp:240] [BACnet] Device_Init completed
+[2025-11-11 13:47:27.229][debug][566016][proto_bacnet_core.cpp:243] [BACnet] address_init completed
+[2025-11-11 13:47:27.230][debug][566016][proto_bacnet_core.cpp:246] [BACnet] dlenv_init completed
+[2025-11-11 13:47:27.230][info][566016][proto_bacnet_callbacks.cpp:422] [BACnet] Protocol stack handlers registered
+[2025-11-11 13:47:27.230][debug][566016][proto_bacnet_core.cpp:250] [BACnet] BACnet handlers registered
+[2025-11-11 13:47:27.230][info][566016][proto_bacnet_core.cpp:264] [BACnet] Context initialized successfully (target device range: 5678-5678)
+[2025-11-11 13:47:27.230][info][566016][proto_bacnet_core.cpp:29] [BACnet][Context] Initialization completed
+[2025-11-11 13:47:27.230][info][566016][proto_bacnet_driver.cpp:62] [BACnet][Driver] Initialization completed successfully
+[2025-11-11 13:47:27.230][info][566016][proto_bacnet_driver.cpp:63] [BACnet][Driver] Local device instance: 4194303
+[2025-11-11 13:47:27.230][error][566016][proto_bacnet_hot_config.cpp:106] [BACnet][HotConfig] Config file not found: No such file or directory
+[2025-11-11 13:47:27.230][warning][566016][proto_bacnet_driver.cpp:83] [BACnet][Driver] Failed to start hot config monitoring (error: -1)
+[2025-11-11 13:47:27.230][info][566016][proto_bacnet_core.cpp:442] [PLC] Driver initialized successfully
+[2025-11-11 13:47:27.230][debug][566016][proto_bacnet_core.cpp:454] [PLC] Current connection state: 0 (IDLE)
+[2025-11-11 13:47:27.230][info][566016][proto_bacnet_core.cpp:459] [PLC] Connecting to device...
+[2025-11-11 13:47:27.230][info][566016][proto_bacnet_driver.cpp:131] [BACnet][Driver] Connecting to BACnet network...
+[2025-11-11 13:47:27.230][info][566016][proto_bacnet_core.cpp:328] [BACnet] Connecting to device range 5678-5678...
+[2025-11-11 13:47:27.230][info][566016][proto_bacnet_discovery.cpp:15] [BACnet] Starting device discovery for range 5678-5678
+[2025-11-11 13:47:27.230][info][566016][proto_bacnet_discovery.cpp:50] [BACnet] Sending Who-Is for device range 5678-5678
+[2025-11-11 13:47:32.236][error][566016][proto_bacnet_discovery.cpp:57] [BACnet] Device discovery timeout for range 5678-5678
+[2025-11-11 13:47:32.236][error][566016][proto_bacnet_core.cpp:335] [BACnet] Failed to discover devices in range 5678-5678 (status: -2)
+[2025-11-11 13:47:32.236][info][566016][proto_bacnet_core.cpp:345] [BACnet] Will retry connection (attempt 1/5)
+[2025-11-11 13:47:32.236][error][566016][proto_bacnet_core.cpp:462] [PLC] Connection failed: -2
+[2025-11-11 13:47:32.236][error][566016][proto_bacnet_core.cpp:510] [PLC] Initialization/connection failed: -2
+[2025-11-11 13:47:32.236][info][566016][main.cc:44] plc_proto_read 返回结果: -2
+[2025-11-11 13:47:32.236][debug][566016][proto_bacnet_core.cpp:454] [PLC] Current connection state: 4 (DISCONNECTED)
+[2025-11-11 13:47:32.236][info][566016][proto_bacnet_core.cpp:459] [PLC] Connecting to device...
+[2025-11-11 13:47:32.236][info][566016][proto_bacnet_driver.cpp:131] [BACnet][Driver] Connecting to BACnet network...
+[2025-11-11 13:47:32.236][info][566016][proto_bacnet_core.cpp:328] [BACnet] Connecting to device range 5678-5678...
+[2025-11-11 13:47:32.236][info][566016][proto_bacnet_discovery.cpp:15] [BACnet] Starting device discovery for range 5678-5678
+[2025-11-11 13:47:32.236][info][566016][proto_bacnet_discovery.cpp:50] [BACnet] Sending Who-Is for device range 5678-5678
+[2025-11-11 13:47:37.243][error][566016][proto_bacnet_discovery.cpp:57] [BACnet] Device discovery timeout for range 5678-5678
+[2025-11-11 13:47:37.243][error][566016][proto_bacnet_core.cpp:335] [BACnet] Failed to discover devices in range 5678-5678 (status: -2)
+[2025-11-11 13:47:37.243][info][566016][proto_bacnet_core.cpp:345] [BACnet] Will retry connection (attempt 2/5)
+[2025-11-11 13:47:37.243][error][566016][proto_bacnet_core.cpp:462] [PLC] Connection failed: -2
+[2025-11-11 13:47:37.243][debug][566016][proto_bacnet_core.cpp:481] [PLC] plc_proto_read: device=5678, analog-value-1, present-value
+[2025-11-11 13:47:37.243][debug][566016][proto_bacnet_core.cpp:454] [PLC] Current connection state: 4 (DISCONNECTED)
+[2025-11-11 13:47:37.243][info][566016][proto_bacnet_core.cpp:459] [PLC] Connecting to device...
+[2025-11-11 13:47:37.243][info][566016][proto_bacnet_driver.cpp:131] [BACnet][Driver] Connecting to BACnet network...
+[2025-11-11 13:47:37.243][info][566016][proto_bacnet_core.cpp:328] [BACnet] Connecting to device range 5678-5678...
+[2025-11-11 13:47:37.243][info][566016][proto_bacnet_discovery.cpp:15] [BACnet] Starting device discovery for range 5678-5678
+[2025-11-11 13:47:37.243][info][566016][proto_bacnet_discovery.cpp:50] [BACnet] Sending Who-Is for device range 5678-5678
+[2025-11-11 13:47:42.250][error][566016][proto_bacnet_discovery.cpp:57] [BACnet] Device discovery timeout for range 5678-5678
+[2025-11-11 13:47:42.250][error][566016][proto_bacnet_core.cpp:335] [BACnet] Failed to discover devices in range 5678-5678 (status: -2)
+[2025-11-11 13:47:42.250][info][566016][proto_bacnet_core.cpp:345] [BACnet] Will retry connection (attempt 3/5)
+[2025-11-11 13:47:42.250][error][566016][proto_bacnet_core.cpp:462] [PLC] Connection failed: -2
+[2025-11-11 13:47:42.250][error][566016][proto_bacnet_core.cpp:510] [PLC] Initialization/connection failed: -2
+[2025-11-11 13:47:42.250][info][566016][proto_bacnet_driver.cpp:56] [BACnet] Program exiting, auto-cleanup resources...
+[2025-11-11 13:47:42.250][info][566016][proto_bacnet_core.cpp:683] [BACnet] Explicit cleanup requested
+[2025-11-11 13:47:42.250][info][566016][proto_bacnet_driver.cpp:104] [BACnet][Driver] Releasing driver resources...
+[2025-11-11 13:47:42.250][info][566016][proto_bacnet_core.cpp:37] [BACnet][Context] Resetting context...
+[2025-11-11 13:47:42.250][info][566016][proto_bacnet_core.cpp:280] [BACnet] Cleaning up context...
+[2025-11-11 13:47:42.250][info][566016][proto_bacnet_core.cpp:302] [BACnet] Context cleanup completed
+[2025-11-11 13:47:42.250][info][566016][proto_bacnet_core.cpp:58] [BACnet][Context] Reset completed
+[2025-11-11 13:47:42.250][info][566016][proto_bacnet_driver.cpp:115] [BACnet][Driver] Driver released
+[2025-11-11 13:47:42.250][info][566016][proto_bacnet_core.cpp:690] [BACnet] Cleanup completed successfully
