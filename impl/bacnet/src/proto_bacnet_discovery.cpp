@@ -22,17 +22,17 @@ proto_status_t discover_target_device(BacnetContext *context)
     set_connection_state(context, BACNET_CONN_CONNECTING);
 
     // 初始化数据链路层
-    Device_Set_Object_Instance_Number(context->config.bacnet.local_device.instance_id);
+    Device_Set_Object_Instance_Number(context->config.local_instance_id);
     
     // 设置定时器
     mstimer apdu_timer{};
     mstimer datalink_timer{};
-    uint32_t timeout_ms = context->config.bacnet.discovery.response_timeout_ms;
+    uint32_t timeout_ms = context->config.response_timeout_ms;
     if (timeout_ms == 0) {
         timeout_ms = bacnet::defaults::kDiscoveryTimeoutMs;
     }
 
-    uint32_t datalink_timer_ms = context->config.bacnet.services.datalink_maintenance_ms;
+    uint32_t datalink_timer_ms = context->config.datalink_maintenance_ms;
     if (datalink_timer_ms == 0) {
         datalink_timer_ms = bacnet::defaults::kDatalinkMaintenanceMs;
     }
@@ -211,8 +211,8 @@ void check_and_reconnect_if_needed(BacnetContext *context)
     }
 
     int attempts = context->reconnect_attempts.load(std::memory_order_acquire);
-    uint8_t max_attempts = context->config.bacnet.connection.max_reconnect_attempts;
-    uint32_t base_interval_ms = context->config.bacnet.connection.reconnect_interval_ms;
+    uint8_t max_attempts = context->config.max_reconnect_attempts;
+    uint32_t base_interval_ms = context->config.reconnect_interval_ms;
     
     // 检查是否达到最大重连次数
     if (attempts >= max_attempts) {
@@ -248,7 +248,7 @@ void check_and_reconnect_if_needed(BacnetContext *context)
         context->reconnect_attempts.fetch_add(1, std::memory_order_acq_rel);
         
         if (context->reconnect_attempts.load(std::memory_order_acquire) >= 
-            context->config.bacnet.connection.max_reconnect_attempts) {
+            context->config.max_reconnect_attempts) {
             log_error("[BACnet] Maximum reconnection attempts reached, giving up");
             trigger_callback(context, "reconnect", PROTO_ERROR_CONNECT);
         }
@@ -280,7 +280,7 @@ void cleanup_stale_requests(BacnetContext *context) {
                     now - state.timestamp).count();
                 
                 // 超时阈值：2倍请求超时时间（兜底保护）
-                uint32_t timeout_threshold = context->config.bacnet.services.read_timeout_ms * 2;
+                uint32_t timeout_threshold = context->config.read_timeout_ms * 2;
                 if (timeout_threshold == 0) timeout_threshold = 12000;
                 
                 if (elapsed > timeout_threshold && state.active_invoke_id == invoke_id) {

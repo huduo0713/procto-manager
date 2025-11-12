@@ -61,10 +61,10 @@ int BacnetDriver::initialize(proto_ctx_t* ctx) {
     
     log_info("[BACnet][Driver] Initialization completed successfully");
     log_info("[BACnet][Driver] Local device instance: {}", 
-             context.config.bacnet.local_device.instance_id);
+             context.config.local_instance_id);
     
     // 启动热配置监控（自动检测配置文件变化）
-    if (!config_path_.empty() && context.config.bacnet.hot_config.enabled) {
+    if (!config_path_.empty() && context.config.hot_config_enabled) {
         // 定义配置变化时的回调函数（lambda 转换为函数指针）
         static auto on_config_changed = +[]() {
             log_warn("[BACnet][HotConfig] Config file changed, reloading...");
@@ -74,15 +74,15 @@ int BacnetDriver::initialize(proto_ctx_t* ctx) {
         int ret = hot_config::init(config_path_.c_str(), on_config_changed, nullptr);
         if (ret == 0) {
             // 设置轮询间隔（从配置文件读取）
-            hot_config::set_polling_interval(context.config.bacnet.hot_config.polling_interval_ms);
+            hot_config::set_polling_interval(context.config.hot_config_polling_ms);
             
             log_info("[BACnet][Driver] Hot config monitoring started for: {}", config_path_);
             log_info("[BACnet][Driver] Polling interval: {}ms", 
-                     context.config.bacnet.hot_config.polling_interval_ms);
+                     context.config.hot_config_polling_ms);
         } else {
             log_warn("[BACnet][Driver] Failed to start hot config monitoring (error: {})", ret);
         }
-    } else if (!context.config.bacnet.hot_config.enabled) {
+    } else if (!context.config.hot_config_enabled) {
         log_info("[BACnet][Driver] Hot config monitoring is disabled in config");
     }
     

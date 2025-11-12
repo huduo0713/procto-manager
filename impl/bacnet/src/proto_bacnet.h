@@ -21,66 +21,53 @@ extern "C" {
 /* 配置数据结构                                                               */
 /* -------------------------------------------------------------------------- */
 
+/**
+ * @brief BACnet 配置结构体（扁平化设计）
+ * 
+ * 说明：
+ * - 所有配置项在同一层级，避免嵌套访问
+ * - 用于 config_update() API 时，数值字段为 0 表示不更新
+ * - 布尔字段为 -1 表示不更新，0=false, 1=true
+ * - 配置优先级：用户传入 > config.yaml > 代码默认值
+ */
 typedef struct {
-    char environment[BACNET_MAX_ENV_LEN];
-    char log_level[BACNET_MAX_LOG_LEVEL_LEN];
-    char log_file[BACNET_MAX_LOG_PATH_LEN];
-} bacnet_common_settings_t;
-
-typedef struct {
-    uint32_t target_device_start;       /* 目标设备实例范围起始 (含) */
-    uint32_t target_device_end;         /* 目标设备实例范围结束 (含) */
-    uint8_t  whois_retry;               /* Who-Is 重试次数 */
-    uint32_t response_timeout_ms;       /* 等待 I-Am 回应的超时 */
-} bacnet_discovery_config_t;
-
-typedef struct {
-    uint32_t instance_id;               /* 本地设备实例 ID */
-    uint16_t max_apdu;                  /* 本地支持的最大 APDU 长度 */
-} bacnet_local_device_config_t;
-
-typedef struct {
-    char     interface_name[BACNET_MAX_INTERFACE_LEN]; /* 指定网络接口 */
-    uint16_t port;                                     /* UDP 端口 (默认 47808) */
-    char     broadcast_address[BACNET_MAX_ADDRESS_LEN];/* 广播地址 */
-} bacnet_network_config_t;
-
-typedef struct {
-    uint32_t read_timeout_ms;           /* ReadProperty 操作超时 */
-    uint32_t write_timeout_ms;          /* WriteProperty 操作超时 */
-    uint8_t  default_priority;          /* WriteProperty 默认优先级 (0 表示未指定) */
-    uint32_t cache_expiry_ms;           /* 读缓存过期时间 (毫秒，默认 1000) */
-    uint8_t  cache_strategy;            /* 缓存策略: 0=激进(每次都发), 1=保守(用缓存) */
-    uint32_t datalink_maintenance_ms;   /* DataLink维护定时器间隔 (毫秒，默认 1000) */
-} bacnet_service_config_t;
-
-typedef struct {
-    uint8_t  max_reconnect_attempts;    /* 最大重连次数 (默认 5) */
-    uint32_t reconnect_interval_ms;     /* 重连间隔 (毫秒，默认 3000) */
-} bacnet_connection_config_t;
-
-typedef struct {
-    int8_t   enabled;                   /* 是否启用热配置监控 (-1=不更新, 0=false, 1=true) */
-    uint32_t polling_interval_ms;       /* 配置文件轮询间隔 (毫秒，默认 1000) */
-} bacnet_hot_config_t;
-
-typedef struct {
-    int8_t                       enabled;      /* 是否启用 BACnet 协议栈 (-1=不更新, 0=false, 1=true) */
-    bacnet_discovery_config_t    discovery;    /* 设备发现配置 */
-    bacnet_local_device_config_t local_device; /* 本地设备参数 */
-    bacnet_network_config_t      network;      /* 网络层配置 */
-    bacnet_service_config_t      services;     /* 服务行为配置 */
-    bacnet_connection_config_t   connection;   /* 连接管理配置 */
-    bacnet_hot_config_t          hot_config;   /* 热配置监控配置 */
-} bacnet_protocol_config_t;
-
-typedef struct {
-    bacnet_common_settings_t common;  /* 通用配置 */
-    bacnet_protocol_config_t bacnet;  /* BACnet 协议配置 */
+    /* ==================== BACnet 协议栈开关 ==================== */
+    int8_t   enabled;                       /* BACnet协议栈是否启用 (-1=不更新, 0=false, 1=true) */
+    
+    /* ==================== 设备发现配置 ==================== */
+    uint32_t target_device_start;           /* 目标设备实例范围起始 (含，默认: 5678) */
+    uint32_t target_device_end;             /* 目标设备实例范围结束 (含，默认: 5678) */
+    uint8_t  whois_retry;                   /* Who-Is 重试次数 (默认: 3) */
+    uint32_t response_timeout_ms;           /* I-Am 响应超时 (毫秒，默认: 5000) */
+    
+    /* ==================== 本地设备参数 ==================== */
+    uint32_t local_instance_id;             /* 本地设备实例 ID (默认: 4194303) */
+    uint16_t local_max_apdu;                /* 本地最大 APDU 长度 (默认: 1476) */
+    
+    /* ==================== 网络层配置 ==================== */
+    char     interface_name[BACNET_MAX_INTERFACE_LEN];  /* 网络接口名称 (默认: ""=自动) */
+    uint16_t port;                          /* UDP 端口 (默认: 47808) */
+    char     broadcast_address[BACNET_MAX_ADDRESS_LEN]; /* 广播地址 (默认: "255.255.255.255") */
+    
+    /* ==================== 服务行为配置 ==================== */
+    uint32_t read_timeout_ms;               /* ReadProperty 超时 (毫秒，默认: 6000) */
+    uint32_t write_timeout_ms;              /* WriteProperty 超时 (毫秒，默认: 6000) */
+    uint8_t  default_priority;              /* 写入默认优先级 (默认: 8) */
+    uint32_t cache_expiry_ms;               /* 读缓存过期时间 (毫秒，默认: 1000) */
+    uint8_t  cache_strategy;                /* 缓存策略 (0=激进每次发送, 1=保守用缓存，默认: 0) */
+    uint32_t datalink_maintenance_ms;       /* DataLink 维护间隔 (毫秒，默认: 1000) */
+    
+    /* ==================== 连接管理配置 ==================== */
+    uint8_t  max_reconnect_attempts;        /* 最大重连次数 (默认: 5) */
+    uint32_t reconnect_interval_ms;         /* 重连间隔 (毫秒，默认: 3000) */
+    
+    /* ==================== 热配置监控 ==================== */
+    int8_t   hot_config_enabled;            /* 是否启用热配置监控 (-1=不更新, 0=false, 1=true，默认: true) */
+    uint32_t hot_config_polling_ms;         /* 配置文件轮询间隔 (毫秒，默认: 1000) */
 } bacnet_config_t;
 
 /* -------------------------------------------------------------------------- */
-/* 配置初始化宏（用于 plc_proto_config_update）                               */
+/* 配置初始化宏（用于 config_update）                                         */
 /* -------------------------------------------------------------------------- */
 
 /**
@@ -88,35 +75,27 @@ typedef struct {
  * 
  * 使用方法：
  *   bacnet_config_t cfg = BACNET_CONFIG_INIT;
- *   cfg.bacnet.services.read_timeout_ms = 8000;  // 只修改这个
- *   plc_proto_config_update(&cfg);
+ *   cfg.read_timeout_ms = 8000;  // 只修改这个字段
+ *   config_update(&cfg);
  * 
  * 说明：
  * - 数值字段初始化为 0（表示不修改）
  * - 布尔字段初始化为 -1（表示不修改）
  * - 字符串字段初始化为空（表示不修改）
- * - 用户可以直接传递 true/false，会自动转换为 1/0
+ * - 用户可以直接传递 true/false 给布尔字段，会自动转换为 1/0
  * 
  * 示例：
  *   bacnet_config_t cfg = BACNET_CONFIG_INIT;
- *   cfg.bacnet.enabled = true;  // 会转换为 1，更新为 true
- *   cfg.bacnet.hot_config.enabled = false;  // 会转换为 0，更新为 false
- *   // 不设置的字段保持为 -1，不会被更新
+ *   cfg.enabled = true;              // 转换为 1，更新为 true
+ *   cfg.hot_config_enabled = false;  // 转换为 0，更新为 false
+ *   cfg.read_timeout_ms = 8000;      // 更新超时
+ *   // 不设置的字段保持初始值，不会被更新
  */
 #define BACNET_CONFIG_INIT { \
-    .common = {0}, \
-    .bacnet = { \
-        .enabled = -1, \
-        .discovery = {0}, \
-        .local_device = {0}, \
-        .network = {0}, \
-        .services = {0}, \
-        .connection = {0}, \
-        .hot_config = { \
-            .enabled = -1, \
-            .polling_interval_ms = 0 \
-        } \
-    } \
+    -1, 0, 0, 0, 0, \
+    0, 0, {0}, 0, {0}, \
+    0, 0, 0, 0, 0, \
+    0, 0, 0, -1, 0 \
 }
 
 /* -------------------------------------------------------------------------- */
@@ -317,22 +296,22 @@ const char* proto_status_to_string(proto_status_t status);
  * 
  * 示例 1: 只更新数值字段
  *   bacnet_config_t cfg = BACNET_CONFIG_INIT;
- *   cfg.bacnet.services.read_timeout_ms = 8000;  // 修改读超时
- *   cfg.bacnet.services.write_timeout_ms = 8000; // 修改写超时
+ *   cfg.read_timeout_ms = 8000;   // 修改读超时
+ *   cfg.write_timeout_ms = 8000;  // 修改写超时
  *   int ret = config_update(&cfg);
  * 
  * 示例 2: 更新布尔字段
  *   bacnet_config_t cfg = BACNET_CONFIG_INIT;
- *   cfg.bacnet.enabled = true;  // 隐式转换为 1，更新为 true
- *   cfg.bacnet.hot_config.enabled = false;  // 隐式转换为 0，更新为 false
+ *   cfg.enabled = true;               // 隐式转换为 1，更新为 true
+ *   cfg.hot_config_enabled = false;   // 隐式转换为 0，更新为 false
  *   int ret = config_update(&cfg);
  * 
  * 示例 3: 混合更新
  *   bacnet_config_t cfg = BACNET_CONFIG_INIT;
- *   strcpy(cfg.common.log_level, "info");
- *   cfg.bacnet.services.read_timeout_ms = 5000;
- *   cfg.bacnet.hot_config.enabled = true;  // 会更新
- *   // cfg.bacnet.enabled 保持为 -1，不会更新
+ *   cfg.read_timeout_ms = 5000;
+ *   cfg.cache_strategy = 1;           // 保守策略
+ *   cfg.hot_config_enabled = true;    // 会更新
+ *   // cfg.enabled 保持为 -1，不会更新
  *   int ret = config_update(&cfg);
  */
 int config_update(const bacnet_config_t *cfg);

@@ -221,14 +221,14 @@ proto_status_t initialize_context(BacnetContext *context)
     log_debug("[BACnet] Configuration loaded successfully");
 
     // 设置目标设备实例范围
-    context->target_device_start = context->config.bacnet.discovery.target_device_start;
-    context->target_device_end = context->config.bacnet.discovery.target_device_end;
+    context->target_device_start = context->config.target_device_start;
+    context->target_device_end = context->config.target_device_end;
 
     // 设置缓存策略
-    context->cache_strategy = (context->config.bacnet.services.cache_strategy == 0) 
+    context->cache_strategy = (context->config.cache_strategy == 0) 
                               ? CacheStrategy::Aggressive 
                               : CacheStrategy::Conservative;
-    context->cache_expiry_ms = context->config.bacnet.services.cache_expiry_ms;
+    context->cache_expiry_ms = context->config.cache_expiry_ms;
     
     log_debug("[BACnet] Cache strategy: {} (expiry: {}ms)", 
               cache_strategy_to_string(context->cache_strategy),
@@ -339,7 +339,7 @@ proto_status_t connect_device(BacnetContext *context)
         
         // 检查是否需要重连
         int attempts = context->reconnect_attempts.load(std::memory_order_acquire);
-        uint8_t max_attempts = context->config.bacnet.connection.max_reconnect_attempts;
+        uint8_t max_attempts = context->config.max_reconnect_attempts;
         if (attempts < max_attempts) {
             context->reconnect_attempts.fetch_add(1, std::memory_order_acq_rel);
             log_info("[BACnet] Will retry connection (attempt {}/{})", 

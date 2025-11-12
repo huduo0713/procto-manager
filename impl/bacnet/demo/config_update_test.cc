@@ -28,9 +28,9 @@ int main() {
     log_info("📝 测试场景 1: 更新服务超时配置");
     log_info("═══════════════════════════════════════════════════════════════");
     
-    bacnet_config_t cfg1 = {0};
-    cfg1.bacnet.services.read_timeout_ms = 8000;
-    cfg1.bacnet.services.write_timeout_ms = 8000;
+    bacnet_config_t cfg1 = BACNET_CONFIG_INIT;
+    cfg1.read_timeout_ms = 8000;
+    cfg1.write_timeout_ms = 8000;
     
     log_info("🔧 修改配置:");
     log_info("  - read_timeout_ms  : 8000");
@@ -58,10 +58,10 @@ int main() {
     log_info("📝 测试场景 2: 更新设备发现配置");
     log_info("═══════════════════════════════════════════════════════════════");
     
-    bacnet_config_t cfg2 = {0};
-    cfg2.bacnet.discovery.target_device_start = 6000;
-    cfg2.bacnet.discovery.target_device_end = 6100;
-    cfg2.bacnet.discovery.whois_retry = 5;
+    bacnet_config_t cfg2 = BACNET_CONFIG_INIT;
+    cfg2.target_device_start = 6000;
+    cfg2.target_device_end = 6100;
+    cfg2.whois_retry = 5;
     
     log_info("🔧 修改配置:");
     log_info("  - target_device_start : 6000");
@@ -87,8 +87,8 @@ int main() {
     log_info("═══════════════════════════════════════════════════════════════");
     
     bacnet_config_t cfg3 = BACNET_CONFIG_INIT;
-    cfg3.bacnet.services.cache_strategy = 1;  // 0=激进, 1=保守
-    cfg3.bacnet.services.cache_expiry_ms = 2000;
+    cfg3.cache_strategy = 1;  // 0=激进, 1=保守
+    cfg3.cache_expiry_ms = 2000;
     
     log_info("🔧 修改配置:");
     log_info("  - cache_strategy   : 1 (保守策略)");
@@ -113,8 +113,8 @@ int main() {
     log_info("═══════════════════════════════════════════════════════════════");
     
     bacnet_config_t cfg4 = BACNET_CONFIG_INIT;
-    cfg4.bacnet.hot_config.enabled = 1;  // -1=未设置, 0=false, 1=true
-    cfg4.bacnet.hot_config.polling_interval_ms = 500;
+    cfg4.hot_config_enabled = 1;  // -1=未设置, 0=false, 1=true
+    cfg4.hot_config_polling_ms = 500;
     
     log_info("🔧 修改配置:");
     log_info("  - hot_config.enabled            : true");
@@ -139,14 +139,12 @@ int main() {
     log_info("═══════════════════════════════════════════════════════════════");
     
     bacnet_config_t cfg5 = BACNET_CONFIG_INIT;
-    std::strcpy(cfg5.common.log_level, "info");
-    cfg5.bacnet.services.read_timeout_ms = 5000;
-    cfg5.bacnet.services.write_timeout_ms = 5000;
-    cfg5.bacnet.connection.max_reconnect_attempts = 10;
-    cfg5.bacnet.connection.reconnect_interval_ms = 2000;
+    cfg5.read_timeout_ms = 5000;
+    cfg5.write_timeout_ms = 5000;
+    cfg5.max_reconnect_attempts = 10;
+    cfg5.reconnect_interval_ms = 2000;
     
     log_info("🔧 修改配置:");
-    log_info("  - common.log_level              : info");
     log_info("  - services.read_timeout_ms      : 5000");
     log_info("  - services.write_timeout_ms     : 5000");
     log_info("  - connection.max_reconnect      : 10");

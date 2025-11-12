@@ -49,7 +49,6 @@ int parse_bool(const char *value, int default_val)
 
 enum class Section {
     Root,
-    Common,
     Protocols,
     Bacnet,
     Discovery,
@@ -71,108 +70,97 @@ void print_config_table(const bacnet_config_t *cfg, const bacnet::ConfigMetadata
     log_info("┃          BACnet Configuration Loaded                         ┃");
     log_info("┣━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┫");
     
-    // Common配置
-    log_info("┃ [Common]                                                     ┃");
-    log_info("┃   environment        : {:20s}  [{:7s}] ┃", 
-             cfg->common.environment, source_to_string(meta->environment));
-    log_info("┃   log_level          : {:20s}  [{:7s}] ┃", 
-             cfg->common.log_level, source_to_string(meta->log_level));
-    log_info("┃   log_file           : {:20s}  [{:7s}] ┃", 
-             cfg->common.log_file, source_to_string(meta->log_file));
-    
-    log_info("┣━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┫");
-    
     // BACnet基础配置
     log_info("┃ [BACnet]                                                     ┃");
     log_info("┃   enabled            : {:20s}  [{:7s}] ┃", 
-             cfg->bacnet.enabled ? "true" : "false", 
+             cfg->enabled ? "true" : "false", 
              source_to_string(meta->bacnet_enabled));
     
     log_info("┣━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┫");
     
     // Discovery配置
-    log_info("┃ [BACnet.Discovery]                                           ┃");
+    log_info("┃ [Discovery]                                                  ┃");
     log_info("┃   target_device_start: {:20d}  [{:7s}] ┃", 
-             cfg->bacnet.discovery.target_device_start,
+             cfg->target_device_start,
              source_to_string(meta->target_device_start));
     log_info("┃   target_device_end  : {:20d}  [{:7s}] ┃", 
-             cfg->bacnet.discovery.target_device_end,
+             cfg->target_device_end,
              source_to_string(meta->target_device_end));
     log_info("┃   whois_retry        : {:20d}  [{:7s}] ┃", 
-             cfg->bacnet.discovery.whois_retry,
+             cfg->whois_retry,
              source_to_string(meta->whois_retry));
     log_info("┃   response_timeout_ms: {:20d}  [{:7s}] ┃", 
-             cfg->bacnet.discovery.response_timeout_ms,
+             cfg->response_timeout_ms,
              source_to_string(meta->response_timeout_ms));
     
     log_info("┣━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┫");
     
     // LocalDevice配置
-    log_info("┃ [BACnet.LocalDevice]                                         ┃");
+    log_info("┃ [LocalDevice]                                                ┃");
     log_info("┃   instance_id        : {:20d}  [{:7s}] ┃", 
-             cfg->bacnet.local_device.instance_id,
+             cfg->local_instance_id,
              source_to_string(meta->instance_id));
     log_info("┃   max_apdu           : {:20d}  [{:7s}] ┃", 
-             cfg->bacnet.local_device.max_apdu,
+             cfg->local_max_apdu,
              source_to_string(meta->max_apdu));
     
     log_info("┣━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┫");
     
     // Network配置
-    log_info("┃ [BACnet.Network]                                             ┃");
+    log_info("┃ [Network]                                                    ┃");
     log_info("┃   interface          : {:20s}  [{:7s}] ┃", 
-             (cfg->bacnet.network.interface_name[0] != '\0') ? cfg->bacnet.network.interface_name : "(auto)",
+             (cfg->interface_name[0] != '\0') ? cfg->interface_name : "(auto)",
              source_to_string(meta->interface_name));
     log_info("┃   port               : {:20d}  [{:7s}] ┃", 
-             cfg->bacnet.network.port,
+             cfg->port,
              source_to_string(meta->port));
     log_info("┃   broadcast_address  : {:20s}  [{:7s}] ┃", 
-             cfg->bacnet.network.broadcast_address,
+             cfg->broadcast_address,
              source_to_string(meta->broadcast_address));
     
     log_info("┣━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┫");
     
     // Services配置
-    log_info("┃ [BACnet.Services]                                            ┃");
+    log_info("┃ [Services]                                                   ┃");
     log_info("┃   read_timeout_ms    : {:20d}  [{:7s}] ┃", 
-             cfg->bacnet.services.read_timeout_ms,
+             cfg->read_timeout_ms,
              source_to_string(meta->read_timeout_ms));
     log_info("┃   write_timeout_ms   : {:20d}  [{:7s}] ┃", 
-             cfg->bacnet.services.write_timeout_ms,
+             cfg->write_timeout_ms,
              source_to_string(meta->write_timeout_ms));
     log_info("┃   default_priority   : {:20d}  [{:7s}] ┃", 
-             cfg->bacnet.services.default_priority,
+             cfg->default_priority,
              source_to_string(meta->default_priority));
     log_info("┃   cache_expiry_ms    : {:20d}  [{:7s}] ┃", 
-             cfg->bacnet.services.cache_expiry_ms,
+             cfg->cache_expiry_ms,
              source_to_string(meta->cache_expiry_ms));
     log_info("┃   cache_strategy     : {:20d}  [{:7s}] ┃", 
-             cfg->bacnet.services.cache_strategy,
+             cfg->cache_strategy,
              source_to_string(meta->cache_strategy));
     log_info("┃   datalink_maint_ms  : {:20d}  [{:7s}] ┃", 
-             cfg->bacnet.services.datalink_maintenance_ms,
+             cfg->datalink_maintenance_ms,
              source_to_string(meta->datalink_maintenance_ms));
     
     log_info("┣━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┫");
     
     // Connection配置
-    log_info("┃ [BACnet.Connection]                                          ┃");
+    log_info("┃ [Connection]                                                 ┃");
     log_info("┃   max_reconnect_attempts: {:17d}  [{:7s}] ┃", 
-             cfg->bacnet.connection.max_reconnect_attempts,
+             cfg->max_reconnect_attempts,
              source_to_string(meta->max_reconnect_attempts));
     log_info("┃   reconnect_interval_ms : {:17d}  [{:7s}] ┃", 
-             cfg->bacnet.connection.reconnect_interval_ms,
+             cfg->reconnect_interval_ms,
              source_to_string(meta->reconnect_interval_ms));
     
     log_info("┣━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┫");
     
     // HotConfig配置
-    log_info("┃ [BACnet.HotConfig]                                           ┃");
+    log_info("┃ [HotConfig]                                                  ┃");
     log_info("┃   enabled            : {:<20}  [{:7s}] ┃", 
-             cfg->bacnet.hot_config.enabled ? "true" : "false",
+             cfg->hot_config_enabled ? "true" : "false",
              source_to_string(meta->hot_config_enabled));
     log_info("┃   polling_interval_ms: {:20d}  [{:7s}] ┃", 
-             cfg->bacnet.hot_config.polling_interval_ms,
+             cfg->hot_config_polling_ms,
              source_to_string(meta->hot_config_polling_interval_ms));
     
     log_info("┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛");
@@ -193,36 +181,38 @@ int bacnet_load_config_from_yaml(const char *yaml_path, bacnet_config_t *cfg)
     // 1. 初始化为默认值（兜底配置）
     std::memset(cfg, 0, sizeof(*cfg));
     
-    copy_str(cfg->common.environment, sizeof(cfg->common.environment), kEnvironment);
-    copy_str(cfg->common.log_level, sizeof(cfg->common.log_level), kLogLevel);
-    copy_str(cfg->common.log_file, sizeof(cfg->common.log_file), kLogFile);
+    // BACnet 协议栈开关
+    cfg->enabled = true;
+    
+    // 设备发现配置
+    cfg->target_device_start = kTargetDeviceStart;
+    cfg->target_device_end = kTargetDeviceEnd;
+    cfg->whois_retry = kWhoIsRetry;
+    cfg->response_timeout_ms = kDiscoveryTimeoutMs;
 
-    cfg->bacnet.enabled = true;
-    cfg->bacnet.discovery.target_device_start = kTargetDeviceStart;
-    cfg->bacnet.discovery.target_device_end = kTargetDeviceEnd;
-    cfg->bacnet.discovery.whois_retry = kWhoIsRetry;
-    cfg->bacnet.discovery.response_timeout_ms = kDiscoveryTimeoutMs;
+    // 本地设备参数
+    cfg->local_instance_id = kLocalDeviceInstance;
+    cfg->local_max_apdu = kMaxApdu;
 
-    cfg->bacnet.local_device.instance_id = kLocalDeviceInstance;
-    cfg->bacnet.local_device.max_apdu = kMaxApdu;
+    // 网络层配置
+    cfg->port = kPort;
+    copy_str(cfg->broadcast_address, sizeof(cfg->broadcast_address), kBroadcastAddress);
 
-    cfg->bacnet.network.port = kPort;
-    copy_str(cfg->bacnet.network.broadcast_address,
-             sizeof(cfg->bacnet.network.broadcast_address),
-             kBroadcastAddress);
+    // 服务行为配置
+    cfg->read_timeout_ms = kReadTimeoutMs;
+    cfg->write_timeout_ms = kWriteTimeoutMs;
+    cfg->default_priority = kDefaultPriority;
+    cfg->cache_expiry_ms = kCacheExpiryMs;
+    cfg->cache_strategy = kCacheStrategy;
+    cfg->datalink_maintenance_ms = kDatalinkMaintenanceMs;
 
-    cfg->bacnet.services.read_timeout_ms = kReadTimeoutMs;
-    cfg->bacnet.services.write_timeout_ms = kWriteTimeoutMs;
-    cfg->bacnet.services.default_priority = kDefaultPriority;
-    cfg->bacnet.services.cache_expiry_ms = kCacheExpiryMs;
-    cfg->bacnet.services.cache_strategy = kCacheStrategy;
-    cfg->bacnet.services.datalink_maintenance_ms = kDatalinkMaintenanceMs;
+    // 连接管理配置
+    cfg->max_reconnect_attempts = kMaxReconnectAttempts;
+    cfg->reconnect_interval_ms = kReconnectIntervalMs;
 
-    cfg->bacnet.connection.max_reconnect_attempts = kMaxReconnectAttempts;
-    cfg->bacnet.connection.reconnect_interval_ms = kReconnectIntervalMs;
-
-    cfg->bacnet.hot_config.enabled = kHotConfigEnabled;
-    cfg->bacnet.hot_config.polling_interval_ms = kHotConfigPollingIntervalMs;
+    // 热配置监控
+    cfg->hot_config_enabled = kHotConfigEnabled;
+    cfg->hot_config_polling_ms = kHotConfigPollingIntervalMs;
 
     // 2. 尝试打开配置文件
     FILE *file = fopen(yaml_path, "r");
@@ -266,10 +256,7 @@ int bacnet_load_config_from_yaml(const char *yaml_path, bacnet_config_t *cfg)
                     bool is_section_key = false;
                     
                     if (current_section == Section::Root) {
-                        if (strcmp(value, "common") == 0) {
-                            current_section = Section::Common;
-                            is_section_key = true;
-                        } else if (strcmp(value, "protocols") == 0) {
+                        if (strcmp(value, "protocols") == 0) {
                             current_section = Section::Protocols;
                             is_section_key = true;
                         }
@@ -306,97 +293,85 @@ int bacnet_load_config_from_yaml(const char *yaml_path, bacnet_config_t *cfg)
                     }
                 } else {
                     // 这是一个值，根据当前 section 和 key 设置配置
-                    if (current_section == Section::Common) {
-                        if (last_key == "environment") {
-                            copy_str(cfg->common.environment, sizeof(cfg->common.environment), value);
-                            g_config_metadata.environment = bacnet::ConfigSource::Yaml;
-                        } else if (last_key == "log_level") {
-                            copy_str(cfg->common.log_level, sizeof(cfg->common.log_level), value);
-                            g_config_metadata.log_level = bacnet::ConfigSource::Yaml;
-                        } else if (last_key == "log_file") {
-                            copy_str(cfg->common.log_file, sizeof(cfg->common.log_file), value);
-                            g_config_metadata.log_file = bacnet::ConfigSource::Yaml;
-                        }
-                    } else if (current_section == Section::Bacnet) {
+                    if (current_section == Section::Bacnet) {
                         if (last_key == "enabled") {
-                            cfg->bacnet.enabled = parse_bool(value, true);
+                            cfg->enabled = parse_bool(value, true);
                             g_config_metadata.bacnet_enabled = bacnet::ConfigSource::Yaml;
                         }
                     } else if (current_section == Section::Discovery) {
                         if (last_key == "target_device_start") {
-                            cfg->bacnet.discovery.target_device_start = std::atoi(value);
+                            cfg->target_device_start = std::atoi(value);
                             g_config_metadata.target_device_start = bacnet::ConfigSource::Yaml;
                         } else if (last_key == "target_device_end") {
-                            cfg->bacnet.discovery.target_device_end = std::atoi(value);
+                            cfg->target_device_end = std::atoi(value);
                             g_config_metadata.target_device_end = bacnet::ConfigSource::Yaml;
                         } else if (last_key == "whois_retry") {
-                            cfg->bacnet.discovery.whois_retry = std::atoi(value);
+                            cfg->whois_retry = std::atoi(value);
                             g_config_metadata.whois_retry = bacnet::ConfigSource::Yaml;
                         } else if (last_key == "response_timeout_ms") {
-                            cfg->bacnet.discovery.response_timeout_ms = std::atoi(value);
+                            cfg->response_timeout_ms = std::atoi(value);
                             g_config_metadata.response_timeout_ms = bacnet::ConfigSource::Yaml;
                         }
                     } else if (current_section == Section::LocalDevice) {
                         if (last_key == "instance_id") {
-                            cfg->bacnet.local_device.instance_id = std::atoi(value);
+                            cfg->local_instance_id = std::atoi(value);
                             g_config_metadata.instance_id = bacnet::ConfigSource::Yaml;
                         } else if (last_key == "max_apdu") {
-                            cfg->bacnet.local_device.max_apdu = std::atoi(value);
+                            cfg->local_max_apdu = std::atoi(value);
                             g_config_metadata.max_apdu = bacnet::ConfigSource::Yaml;
                         }
                     } else if (current_section == Section::Network) {
                         if (last_key == "interface") {
-                            copy_str(cfg->bacnet.network.interface_name, sizeof(cfg->bacnet.network.interface_name), value);
+                            copy_str(cfg->interface_name, sizeof(cfg->interface_name), value);
                             g_config_metadata.interface_name = bacnet::ConfigSource::Yaml;
                         } else if (last_key == "port") {
-                            cfg->bacnet.network.port = std::atoi(value);
+                            cfg->port = std::atoi(value);
                             g_config_metadata.port = bacnet::ConfigSource::Yaml;
                         } else if (last_key == "broadcast_address") {
-                            copy_str(cfg->bacnet.network.broadcast_address, 
-                                    sizeof(cfg->bacnet.network.broadcast_address), value);
+                            copy_str(cfg->broadcast_address, sizeof(cfg->broadcast_address), value);
                             g_config_metadata.broadcast_address = bacnet::ConfigSource::Yaml;
                         }
                     } else if (current_section == Section::Services) {
                         if (last_key == "read_timeout_ms") {
                             uint32_t val = std::atoi(value);
-                            cfg->bacnet.services.read_timeout_ms = (val > 0) ? val : kReadTimeoutMs;
+                            cfg->read_timeout_ms = (val > 0) ? val : kReadTimeoutMs;
                             g_config_metadata.read_timeout_ms = bacnet::ConfigSource::Yaml;
                         } else if (last_key == "write_timeout_ms") {
                             uint32_t val = std::atoi(value);
-                            cfg->bacnet.services.write_timeout_ms = (val > 0) ? val : kWriteTimeoutMs;
+                            cfg->write_timeout_ms = (val > 0) ? val : kWriteTimeoutMs;
                             g_config_metadata.write_timeout_ms = bacnet::ConfigSource::Yaml;
                         } else if (last_key == "default_priority") {
                             uint8_t val = std::atoi(value);
-                            cfg->bacnet.services.default_priority = (val > 0) ? val : kDefaultPriority;
+                            cfg->default_priority = (val > 0) ? val : kDefaultPriority;
                             g_config_metadata.default_priority = bacnet::ConfigSource::Yaml;
                         } else if (last_key == "cache_expiry_ms") {
-                            cfg->bacnet.services.cache_expiry_ms = std::atoi(value);
+                            cfg->cache_expiry_ms = std::atoi(value);
                             g_config_metadata.cache_expiry_ms = bacnet::ConfigSource::Yaml;
                         } else if (last_key == "cache_strategy") {
-                            cfg->bacnet.services.cache_strategy = std::atoi(value);
+                            cfg->cache_strategy = std::atoi(value);
                             g_config_metadata.cache_strategy = bacnet::ConfigSource::Yaml;
                         } else if (last_key == "datalink_maintenance_ms") {
                             uint32_t val = std::atoi(value);
-                            cfg->bacnet.services.datalink_maintenance_ms = (val > 0) ? val : kDatalinkMaintenanceMs;
+                            cfg->datalink_maintenance_ms = (val > 0) ? val : kDatalinkMaintenanceMs;
                             g_config_metadata.datalink_maintenance_ms = bacnet::ConfigSource::Yaml;
                         }
                     } else if (current_section == Section::Connection) {
                         if (last_key == "max_reconnect_attempts") {
                             uint8_t val = std::atoi(value);
-                            cfg->bacnet.connection.max_reconnect_attempts = (val > 0) ? val : kMaxReconnectAttempts;
+                            cfg->max_reconnect_attempts = (val > 0) ? val : kMaxReconnectAttempts;
                             g_config_metadata.max_reconnect_attempts = bacnet::ConfigSource::Yaml;
                         } else if (last_key == "reconnect_interval_ms") {
                             uint32_t val = std::atoi(value);
-                            cfg->bacnet.connection.reconnect_interval_ms = (val > 0) ? val : kReconnectIntervalMs;
+                            cfg->reconnect_interval_ms = (val > 0) ? val : kReconnectIntervalMs;
                             g_config_metadata.reconnect_interval_ms = bacnet::ConfigSource::Yaml;
                         }
                     } else if (current_section == Section::HotConfig) {
                         if (last_key == "enabled") {
-                            cfg->bacnet.hot_config.enabled = parse_bool(value, true);
+                            cfg->hot_config_enabled = parse_bool(value, true);
                             g_config_metadata.hot_config_enabled = bacnet::ConfigSource::Yaml;
                         } else if (last_key == "polling_interval_ms") {
                             uint32_t val = std::atoi(value);
-                            cfg->bacnet.hot_config.polling_interval_ms = (val > 0) ? val : kHotConfigPollingIntervalMs;
+                            cfg->hot_config_polling_ms = (val > 0) ? val : kHotConfigPollingIntervalMs;
                             g_config_metadata.hot_config_polling_interval_ms = bacnet::ConfigSource::Yaml;
                         }
                     }
@@ -417,7 +392,7 @@ int bacnet_load_config_from_yaml(const char *yaml_path, bacnet_config_t *cfg)
                     current_section = Section::Bacnet;
                 } else if (current_section == Section::Bacnet) {
                     current_section = Section::Protocols;
-                } else if (current_section == Section::Common || current_section == Section::Protocols) {
+                } else if (current_section == Section::Protocols) {
                     current_section = Section::Root;
                 }
                 break;
@@ -713,7 +688,6 @@ int config_update(const bacnet_config_t *cfg) {
     // 2. 定义配置更新辅助函数
     enum class CurrentSection {
         None,
-        Common,
         Bacnet,
         Discovery,
         LocalDevice,
@@ -767,9 +741,7 @@ int config_update(const bacnet_config_t *cfg) {
 
     for (auto &line : lines) {
         // 检测 section 切换
-        if (line.find("common:") != std::string::npos) {
-            current_section = CurrentSection::Common;
-        } else if (line.find("bacnet:") != std::string::npos) {
+        if (line.find("bacnet:") != std::string::npos) {
             current_section = CurrentSection::Bacnet;
         } else if (line.find("discovery:") != std::string::npos) {
             current_section = CurrentSection::Discovery;
@@ -788,104 +760,88 @@ int config_update(const bacnet_config_t *cfg) {
         // 根据当前 section 更新配置值
         char value_buf[256];  // 扩大缓冲区以容纳长路径（最大 127 字节 + 引号 + null）
         
-        switch (current_section) {
-            case CurrentSection::Common:
-                if (cfg->common.environment[0]) {
-                    snprintf(value_buf, sizeof(value_buf), "\"%s\"", cfg->common.environment);
-                    if (update_line(line, "environment", value_buf)) updates_count++;
-                }
-                if (cfg->common.log_level[0]) {
-                    snprintf(value_buf, sizeof(value_buf), "\"%s\"", cfg->common.log_level);
-                    if (update_line(line, "log_level", value_buf)) updates_count++;
-                }
-                if (cfg->common.log_file[0]) {
-                    snprintf(value_buf, sizeof(value_buf), "\"%s\"", cfg->common.log_file);
-                    if (update_line(line, "log_file", value_buf)) updates_count++;
-                }
-                break;
-
-            case CurrentSection::Bacnet:
+        switch (current_section) {            case CurrentSection::Bacnet:
                 // bacnet.enabled (默认不更新布尔字段)
                 break;
 
             case CurrentSection::Discovery:
-                if (cfg->bacnet.discovery.target_device_start > 0) {
-                    snprintf(value_buf, sizeof(value_buf), "%u", cfg->bacnet.discovery.target_device_start);
+                if (cfg->target_device_start > 0) {
+                    snprintf(value_buf, sizeof(value_buf), "%u", cfg->target_device_start);
                     if (update_line(line, "target_device_start", value_buf)) updates_count++;
                 }
-                if (cfg->bacnet.discovery.target_device_end > 0) {
-                    snprintf(value_buf, sizeof(value_buf), "%u", cfg->bacnet.discovery.target_device_end);
+                if (cfg->target_device_end > 0) {
+                    snprintf(value_buf, sizeof(value_buf), "%u", cfg->target_device_end);
                     if (update_line(line, "target_device_end", value_buf)) updates_count++;
                 }
-                if (cfg->bacnet.discovery.whois_retry > 0) {
-                    snprintf(value_buf, sizeof(value_buf), "%u", cfg->bacnet.discovery.whois_retry);
+                if (cfg->whois_retry > 0) {
+                    snprintf(value_buf, sizeof(value_buf), "%u", cfg->whois_retry);
                     if (update_line(line, "whois_retry", value_buf)) updates_count++;
                 }
-                if (cfg->bacnet.discovery.response_timeout_ms > 0) {
-                    snprintf(value_buf, sizeof(value_buf), "%u", cfg->bacnet.discovery.response_timeout_ms);
+                if (cfg->response_timeout_ms > 0) {
+                    snprintf(value_buf, sizeof(value_buf), "%u", cfg->response_timeout_ms);
                     if (update_line(line, "response_timeout_ms", value_buf)) updates_count++;
                 }
                 break;
 
             case CurrentSection::LocalDevice:
-                if (cfg->bacnet.local_device.instance_id > 0) {
-                    snprintf(value_buf, sizeof(value_buf), "%u", cfg->bacnet.local_device.instance_id);
+                if (cfg->local_instance_id > 0) {
+                    snprintf(value_buf, sizeof(value_buf), "%u", cfg->local_instance_id);
                     if (update_line(line, "instance_id", value_buf)) updates_count++;
                 }
-                if (cfg->bacnet.local_device.max_apdu > 0) {
-                    snprintf(value_buf, sizeof(value_buf), "%u", cfg->bacnet.local_device.max_apdu);
+                if (cfg->local_max_apdu > 0) {
+                    snprintf(value_buf, sizeof(value_buf), "%u", cfg->local_max_apdu);
                     if (update_line(line, "max_apdu", value_buf)) updates_count++;
                 }
                 break;
 
             case CurrentSection::Network:
-                if (cfg->bacnet.network.interface_name[0]) {
-                    snprintf(value_buf, sizeof(value_buf), "\"%s\"", cfg->bacnet.network.interface_name);
+                if (cfg->interface_name[0]) {
+                    snprintf(value_buf, sizeof(value_buf), "\"%s\"", cfg->interface_name);
                     if (update_line(line, "interface", value_buf)) updates_count++;
                 }
-                if (cfg->bacnet.network.port > 0) {
-                    snprintf(value_buf, sizeof(value_buf), "%u", cfg->bacnet.network.port);
+                if (cfg->port > 0) {
+                    snprintf(value_buf, sizeof(value_buf), "%u", cfg->port);
                     if (update_line(line, "port", value_buf)) updates_count++;
                 }
-                if (cfg->bacnet.network.broadcast_address[0]) {
-                    snprintf(value_buf, sizeof(value_buf), "\"%s\"", cfg->bacnet.network.broadcast_address);
+                if (cfg->broadcast_address[0]) {
+                    snprintf(value_buf, sizeof(value_buf), "\"%s\"", cfg->broadcast_address);
                     if (update_line(line, "broadcast_address", value_buf)) updates_count++;
                 }
                 break;
 
             case CurrentSection::Services:
-                if (cfg->bacnet.services.read_timeout_ms > 0) {
-                    snprintf(value_buf, sizeof(value_buf), "%u", cfg->bacnet.services.read_timeout_ms);
+                if (cfg->read_timeout_ms > 0) {
+                    snprintf(value_buf, sizeof(value_buf), "%u", cfg->read_timeout_ms);
                     if (update_line(line, "read_timeout_ms", value_buf)) updates_count++;
                 }
-                if (cfg->bacnet.services.write_timeout_ms > 0) {
-                    snprintf(value_buf, sizeof(value_buf), "%u", cfg->bacnet.services.write_timeout_ms);
+                if (cfg->write_timeout_ms > 0) {
+                    snprintf(value_buf, sizeof(value_buf), "%u", cfg->write_timeout_ms);
                     if (update_line(line, "write_timeout_ms", value_buf)) updates_count++;
                 }
-                if (cfg->bacnet.services.default_priority > 0) {
-                    snprintf(value_buf, sizeof(value_buf), "%u", cfg->bacnet.services.default_priority);
+                if (cfg->default_priority > 0) {
+                    snprintf(value_buf, sizeof(value_buf), "%u", cfg->default_priority);
                     if (update_line(line, "default_priority", value_buf)) updates_count++;
                 }
-                if (cfg->bacnet.services.cache_expiry_ms > 0) {
-                    snprintf(value_buf, sizeof(value_buf), "%u", cfg->bacnet.services.cache_expiry_ms);
+                if (cfg->cache_expiry_ms > 0) {
+                    snprintf(value_buf, sizeof(value_buf), "%u", cfg->cache_expiry_ms);
                     if (update_line(line, "cache_expiry_ms", value_buf)) updates_count++;
                 }
-                snprintf(value_buf, sizeof(value_buf), "%u", cfg->bacnet.services.cache_strategy);
+                snprintf(value_buf, sizeof(value_buf), "%u", cfg->cache_strategy);
                 if (update_line(line, "cache_strategy", value_buf)) updates_count++;
                 
-                if (cfg->bacnet.services.datalink_maintenance_ms > 0) {
-                    snprintf(value_buf, sizeof(value_buf), "%u", cfg->bacnet.services.datalink_maintenance_ms);
+                if (cfg->datalink_maintenance_ms > 0) {
+                    snprintf(value_buf, sizeof(value_buf), "%u", cfg->datalink_maintenance_ms);
                     if (update_line(line, "datalink_maintenance_ms", value_buf)) updates_count++;
                 }
                 break;
 
             case CurrentSection::Connection:
-                if (cfg->bacnet.connection.max_reconnect_attempts > 0) {
-                    snprintf(value_buf, sizeof(value_buf), "%u", cfg->bacnet.connection.max_reconnect_attempts);
+                if (cfg->max_reconnect_attempts > 0) {
+                    snprintf(value_buf, sizeof(value_buf), "%u", cfg->max_reconnect_attempts);
                     if (update_line(line, "max_reconnect_attempts", value_buf)) updates_count++;
                 }
-                if (cfg->bacnet.connection.reconnect_interval_ms > 0) {
-                    snprintf(value_buf, sizeof(value_buf), "%u", cfg->bacnet.connection.reconnect_interval_ms);
+                if (cfg->reconnect_interval_ms > 0) {
+                    snprintf(value_buf, sizeof(value_buf), "%u", cfg->reconnect_interval_ms);
                     if (update_line(line, "reconnect_interval_ms", value_buf)) updates_count++;
                 }
                 break;
@@ -893,8 +849,8 @@ int config_update(const bacnet_config_t *cfg) {
             case CurrentSection::HotConfig:
                 // hot_config.enabled (默认不更新布尔字段)
                 
-                if (cfg->bacnet.hot_config.polling_interval_ms > 0) {
-                    snprintf(value_buf, sizeof(value_buf), "%u", cfg->bacnet.hot_config.polling_interval_ms);
+                if (cfg->hot_config_polling_ms > 0) {
+                    snprintf(value_buf, sizeof(value_buf), "%u", cfg->hot_config_polling_ms);
                     if (update_line(line, "polling_interval_ms", value_buf)) updates_count++;
                 }
                 break;
@@ -920,9 +876,9 @@ int config_update(const bacnet_config_t *cfg) {
     log_info("[BACnet][Config] File: {}", config_path);
     
     // 如果启用了热配置，修改会自动生效
-    if (cfg->bacnet.hot_config.enabled) {
+    if (cfg->hot_config_enabled) {
         log_info("[BACnet][Config] Hot config is enabled, changes will take effect within {} ms", 
-                 cfg->bacnet.hot_config.polling_interval_ms);
+                 cfg->hot_config_polling_ms);
     } else {
         log_warn("[BACnet][Config] Hot config is disabled, please restart the application for changes to take effect");
     }

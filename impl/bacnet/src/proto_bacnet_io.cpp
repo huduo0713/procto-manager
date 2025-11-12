@@ -79,7 +79,7 @@ proto_status_t execute_read_property(BacnetContext *context, bacnet_read_t *req,
         context->active_operation.device_instance = req->device_instance;
         context->active_operation.start_time = std::chrono::steady_clock::now();
         context->active_operation.timeout_ms = req->timeout_ms ? req->timeout_ms : 
-                                                context->config.bacnet.services.read_timeout_ms;
+                                                context->config.read_timeout_ms;
         if (context->active_operation.timeout_ms == 0) {
             context->active_operation.timeout_ms = bacnet::defaults::kReadTimeoutMs;
         }
@@ -182,14 +182,14 @@ proto_status_t execute_write_property(BacnetContext *context, const bacnet_write
         context->active_operation.device_instance = req->device_instance;
         context->active_operation.start_time = std::chrono::steady_clock::now();
         context->active_operation.timeout_ms = req->timeout_ms ? req->timeout_ms : 
-                                                context->config.bacnet.services.write_timeout_ms;
+                                                context->config.write_timeout_ms;
         if (context->active_operation.timeout_ms == 0) {
             context->active_operation.timeout_ms = bacnet::defaults::kWriteTimeoutMs;
         }
 
         // 确定写入优先级
         uint8_t priority = (req->priority == 0) ? 
-                           context->config.bacnet.services.default_priority : req->priority;
+                           context->config.default_priority : req->priority;
         if (priority == 0) {
             priority = BACNET_MAX_PRIORITY;
         }
@@ -219,7 +219,7 @@ proto_status_t execute_write_property(BacnetContext *context, const bacnet_write
 
         // 确定最终超时时间（三层优先级）
         uint32_t final_timeout_ms = req->timeout_ms ? req->timeout_ms : 
-                                     context->config.bacnet.services.write_timeout_ms;
+                                     context->config.write_timeout_ms;
         if (final_timeout_ms == 0) {
             final_timeout_ms = bacnet::defaults::kWriteTimeoutMs;
         }

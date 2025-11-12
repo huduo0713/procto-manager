@@ -1990,52 +1990,216 @@ switch (ret) {
 ### 📄 配置文件位置
 
 ```
-/usr/runtime/protocol/bacnet/config.yaml
+impl/bacnet/config.yaml
 ```
 
-### ⚙️ 配置参数详解
+### ⚙️ 配置结构重构（v4.1）
+
+**重大更新**：配置结构体从 **3 层嵌套** 重构为 **扁平化单层结构**，API 更简洁！
+
+#### 🎯 重构对比
+
+**之前（嵌套 3 层）**：
+```c
+// ❌ 访问路径冗长
+cfg->common.log_level
+cfg->bacnet.services.read_timeout_ms
+cfg->bacnet.local_device.instance_id
+cfg->bacnet.hot_config.enabled
+```
+
+**现在（扁平化）**：
+```c
+// ✅ 访问路径简短直观
+cfg->read_timeout_ms
+cfg->local_instance_id
+cfg->hot_config_enabled
+```
+
+**重构说明**：
+- ❌ **移除**：`common` 配置（environment, log_level, log_file）已从 `bacnet_config_t` 中删除
+- ✅ **原因**：日志配置由 `OneLogger` 统一管理（位于 `common/utils/one_logger.hpp`）
+- ✅ **优势**：所有协议模块（BACnet、Modbus、MQTT）使用统一的日志系统
+
+#### 📋 新配置结构体定义
+
+```c
+typedef struct {
+    // ========== BACnet 协议栈开关 ==========
+    int8_t   enabled;                      // 是否启用 BACnet 协议栈 (-1=不更新, 0=false, 1=true)
+    
+    // ========== 设备发现配置 ==========
+    uint32_t target_device_start;          // 🎯 目标设备实例范围起始
+    uint32_t target_device_end;            // 🎯 目标设备实例范围结束
+    uint8_t  whois_retry;                  // 🔄 Who-Is 重试次数
+    uint32_t response_timeout_ms;          // ⏱️ I-Am 响应超时时间
+    
+    // ========== 本地设备参数 ==========
+    uint32_t local_instance_id;            // 🆔 本地设备实例ID
+    uint16_t local_max_apdu;               // 📏 最大 APDU 长度
+    
+    // ========== 网络层配置 ==========
+    char     interface_name[32];           // 🌐 网络接口名称
+    uint16_t port;                         // 🔌 UDP 端口
+    char     broadcast_address[48];        // 📡 广播地址
+    
+    // ========== 服务行为配置 ==========
+    uint32_t read_timeout_ms;              // ⏱️ 读取操作超时
+    uint32_t write_timeout_ms;             // ⏱️ 写入操作超时
+    uint8_t  default_priority;             // ⭐ 默认写入优先级
+    uint32_t cache_expiry_ms;              // 💾 缓存过期时间
+    uint8_t  cache_strategy;               // 📊 缓存策略 (0=激进, 1=保守)
+    uint32_t datalink_maintenance_ms;      // 🔧 DataLink 维护定时器间隔
+    
+    // ========== 连接管理配置 ==========
+    uint8_t  max_reconnect_attempts;       // 🔄 最大重连次数
+    uint32_t reconnect_interval_ms;        // ⏱️ 重连间隔
+    
+    // ========== 热配置监控 ==========
+    int8_t   hot_config_enabled;           // 🔥 是否启用配置文件自动监控 (-1=不更新, 0=false, 1=true)
+    uint32_t hot_config_polling_ms;        // ⏱️ 配置文件检查间隔
+} bacnet_config_t;
+```
+
+### ⚙️ 配置文件示例
 
 ```yaml
-common:
-  environment: production          # 运行环境
-  log_level: info                  # 日志级别 (debug/info/warn/error)
-  log_file: bacnet.log             # 日志文件路径
+# config.yaml
+# BACnet 协议配置文件
 
-bacnet:
-  enabled: true                    # 是否启用 BACnet 功能
-  
-  discovery:
-    target_device_start: 5678      # 🎯 目标设备实例范围起始
-    target_device_end: 5678        # 🎯 目标设备实例范围结束
-    whois_retry: 3                 # 🔄 Who-Is 重试次数
-    response_timeout_ms: 5000      # ⏱️ I-Am 响应超时时间
-  
-  local_device:
-    instance_id: 4194303           # 🆔 本地设备实例ID
-    max_apdu: 1476                 # 📏 最大 APDU 长度
-  
-  network:
-    interface: eth0                # 🌐 网络接口名称
-    port: 47808                    # 🔌 UDP 端口
-    broadcast_address: 255.255.255.255  # 📡 广播地址
-  
-  services:
-    read_timeout_ms: 6000          # ⏱️ 读取操作超时 (API中timeout_ms=0时使用此值)
-    write_timeout_ms: 6000         # ⏱️ 写入操作超时 (API中timeout_ms=0时使用此值)
-    default_priority: 8            # ⭐ 默认写入优先级 (API中priority=0时使用此值)
-    cache_expiry_ms: 1000          # 💾 缓存过期时间 (毫秒)
-    cache_strategy: 0              # 📊 缓存策略 (0=激进,每次都发送; 1=保守,使用未过期缓存)
+protocols:
+  # --- BACnet 协议配置块 ---
+  bacnet:
+    enabled: true                 # 是否启用 BACnet 协议栈
+
+    # 设备发现与目标设备配置
+    discovery:
+      target_device_start: 5678   # 🎯 目标设备实例范围起始
+      target_device_end: 5678     # 🎯 目标设备实例范围结束
+      whois_retry: 3              # 🔄 Who-Is 重试次数
+      response_timeout_ms: 5000   # ⏱️ 等待 I-Am 响应超时时间
+
+    # 本地设备信息
+    local_device:
+      instance_id: 4194303        # 🆔 本地设备实例 ID (默认使用允许的最大值)
+      max_apdu: 1476              # 📏 本地支持的最大 APDU 长度
+
+    # 网络相关参数
+    network:
+      interface: ""               # 🌐 使用的网络接口 (留空则使用默认配置)
+      port: 47808                 # 🔌 BACnet/IP UDP 端口 (默认 47808)
+      broadcast_address: "255.255.255.255"  # 📡 广播地址，用于 Who-Is
+
+    # 服务行为配置
+    services:
+      read_timeout_ms: 6000       # ⏱️ 读取操作等待确认的超时时间
+      write_timeout_ms: 6000      # ⏱️ 写入操作等待确认的超时时间
+      default_priority: 8         # ⭐ 写属性时使用的默认优先级 (1-16, 0 表示不指定)
+      cache_expiry_ms: 1000       # 💾 读缓存过期时间 (毫秒)
+      cache_strategy: 0           # 📊 缓存策略: 0=激进(每次都发送请求), 1=保守(使用未过期缓存)
+      datalink_maintenance_ms: 1000  # 🔧 DataLink维护定时器间隔 (毫秒)
+
+    # 连接管理配置
+    connection:
+      max_reconnect_attempts: 5   # 🔄 最大重连次数
+      reconnect_interval_ms: 3000 # ⏱️ 重连间隔 (毫秒)
+
+    # 热配置监控
+    hot_config:
+      enabled: true               # 🔥 是否启用配置文件自动监控 (默认: true)
+      polling_interval_ms: 1000   # ⏱️ 配置文件检查间隔 (毫秒, 默认: 1000ms)
+                                  # 建议范围: 500-5000ms, 太短会增加系统开销
 ```
 
-**💡 默认值说明**：
-- 当 API 中 `timeout_ms = 0` 时，自动使用配置文件中的 `read_timeout_ms` 或 `write_timeout_ms`
-- 当 API 中 `priority = 0` 时，自动使用配置文件中的 `default_priority`
-- 当 API 中 `array_index` 不填写时，默认为 `-1` (读取整个数组)
+### � 配置参数详解
 
-**🎯 推荐做法**：
-1. ✅ 在配置文件中设置合理的全局默认值
-2. ✅ API调用时使用便捷宏 `BACNET_READ_INIT()` / `BACNET_WRITE_INIT()`
-3. ✅ 只在特殊场景才手动覆盖默认值
+#### BACnet 协议栈开关
+
+| 参数 | 类型 | 默认值 | 说明 |
+|------|------|--------|------|
+| `enabled` | int8_t | true | 是否启用 BACnet 协议栈 |
+
+#### 设备发现配置
+
+| 参数 | 类型 | 默认值 | 说明 |
+|------|------|--------|------|
+| `target_device_start` | uint32_t | 0 | 目标设备实例范围起始 |
+| `target_device_end` | uint32_t | 4194303 | 目标设备实例范围结束 |
+| `whois_retry` | uint8_t | 3 | Who-Is 重试次数 |
+| `response_timeout_ms` | uint32_t | 3000 | I-Am 响应超时时间 |
+
+#### 本地设备参数
+
+| 参数 | 类型 | 默认值 | 说明 |
+|------|------|--------|------|
+| `local_instance_id` | uint32_t | 4194303 | 本地设备实例 ID（BACnet 允许的最大值） |
+| `local_max_apdu` | uint16_t | 1476 | 最大 APDU 长度（BACnet/IP 典型值） |
+
+#### 网络层配置
+
+| 参数 | 类型 | 默认值 | 说明 |
+|------|------|--------|------|
+| `interface_name` | char[32] | "" | 网络接口名称（空=使用默认） |
+| `port` | uint16_t | 47808 | BACnet/IP UDP 端口 |
+| `broadcast_address` | char[48] | "255.255.255.255" | 广播地址，用于 Who-Is |
+
+#### 服务行为配置
+
+| 参数 | 类型 | 默认值 | 说明 |
+|------|------|--------|------|
+| `read_timeout_ms` | uint32_t | 8000 | 读取操作超时（API 中 timeout_ms=0 时使用） |
+| `write_timeout_ms` | uint32_t | 8000 | 写入操作超时（API 中 timeout_ms=0 时使用） |
+| `default_priority` | uint8_t | 16 | 默认写入优先级（API 中 priority=0 时使用，1-16） |
+| `cache_expiry_ms` | uint32_t | 60000 | 缓存过期时间（毫秒） |
+| `cache_strategy` | uint8_t | 0 | 0=激进（每次都发送请求），1=保守（使用未过期缓存） |
+| `datalink_maintenance_ms` | uint32_t | 1000 | DataLink 维护定时器间隔 |
+
+#### 连接管理配置
+
+| 参数 | 类型 | 默认值 | 说明 |
+|------|------|--------|------|
+| `max_reconnect_attempts` | uint8_t | 3 | 最大重连次数 |
+| `reconnect_interval_ms` | uint32_t | 5000 | 重连间隔（毫秒） |
+
+#### 热配置监控
+
+| 参数 | 类型 | 默认值 | 说明 |
+|------|------|--------|------|
+| `hot_config_enabled` | int8_t | true | 是否启用配置文件自动监控 |
+| `hot_config_polling_ms` | uint32_t | 1000 | 配置文件检查间隔（建议 500-5000ms） |
+
+### 💡 配置优先级
+
+**三层优先级机制**（从低到高）：
+
+```
+1️⃣ 代码默认值（proto_bacnet_internal.hpp）
+    ↓ 被覆盖
+2️⃣ YAML 配置文件（config.yaml）
+    ↓ 被覆盖
+3️⃣ config_update() API 运行时更新
+```
+
+**示例**：
+```c
+// 1️⃣ 代码默认值
+kReadTimeoutMs = 8000
+
+// 2️⃣ YAML 文件覆盖
+read_timeout_ms: 6000  # 实际使用 6000
+
+// 3️⃣ API 更新覆盖
+bacnet_config_t cfg = BACNET_CONFIG_INIT;
+cfg.read_timeout_ms = 10000;
+config_update(&cfg);  # 实际使用 10000
+```
+
+### 💡 使用建议
+
+**✅ 推荐做法**：
+1. 在配置文件中设置合理的全局默认值
+2. API 调用时使用便捷宏 `BACNET_READ_INIT()` / `BACNET_WRITE_INIT()`
+3. 只在特殊场景才手动覆盖默认值
 
 **示例对比**：
 ```c
@@ -2087,7 +2251,6 @@ bacnet_read_t req = BACNET_READ_INIT(
 # 2. 编辑配置文件
 vim ../config.yaml
 # 修改任意配置项，例如：
-#   - log_level: debug → info
 #   - target_device_start: 5678 → 5679
 #   - cache_expiry_ms: 1000 → 2000
 
@@ -2104,7 +2267,6 @@ vim ../config.yaml
 [BACnet][HotConfig] Monitor thread started, watching: ../config.yaml (polling interval: 1000ms)
 
 # 检测到文件变化
-[BACnet][HotConfig] Checking #42: mtime=1762740028, last_mtime=1762740028
 [BACnet][HotConfig] Config file changed (1762740028 -> 1762741561), invoking callback
 [BACnet] Config reload triggered
 [BACnet] Config reload flag set, will reload on next read/write request
@@ -2113,7 +2275,6 @@ vim ../config.yaml
 [BACnet] Pending config reload detected, releasing driver...
 [BACnet][Driver] Releasing driver resources...
 [BACnet][Driver] Stopping hot config monitoring...
-[BACnet][HotConfig] Stopping monitor thread...
 [BACnet][HotConfig] Monitor thread stopped
 
 # 重新初始化
@@ -2123,7 +2284,6 @@ vim ../config.yaml
 ┃          BACnet Configuration Loaded                         ┃
 ┃   ... (显示所有新配置) ...
 ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
-[BACnet][Driver] Hot config monitoring started for: ../config.yaml  ← 新监控线程
 [BACnet] Connected to device range 5678-5678 successfully
 ```
 
@@ -2132,45 +2292,28 @@ vim ../config.yaml
 | 特性 | 说明 |
 |------|------|
 | 🧵 **监控线程** | 独立线程，使用 `std::thread`，RAII 自动管理 |
-| ⏱️ **检查间隔** | 1000ms（可配置，见高级配置） |
+| ⏱️ **检查间隔** | 1000ms（可配置） |
 | 🔒 **线程安全** | 使用 `std::atomic` + `std::mutex` 保证安全 |
 | 🛡️ **死锁避免** | 延迟重载机制，监控线程不会阻塞自己 |
 | 🔄 **重载方式** | 完全释放旧驱动 → 重新初始化 → 重新连接设备 |
 | 📊 **性能开销** | < 0.1% CPU（每秒一次 stat() 系统调用） |
 | 💾 **内存开销** | ~8KB（一个线程栈） |
 
-**配置可修改项**：
-```yaml
-# config.yaml
-protocols:
-  bacnet:
-    hot_config:
-      enabled: true              # 是否启用热配置监控（默认: true）
-      polling_interval_ms: 1000  # 轮询间隔（毫秒，默认: 1000ms）
-                                 # 建议范围: 500-5000ms
-```
-
 **常见场景**：
 
-1. **修改日志级别**（立即生效）：
-   ```yaml
-   log_level: debug  → log_level: info
-   ```
-   无需重启，下次请求后日志级别改变 ✅
-
-2. **修改目标设备**（自动重新发现）：
+1. **修改目标设备**（自动重新发现）：
    ```yaml
    target_device_start: 5678 → target_device_start: 5679
    ```
    自动断开旧连接，重新发现新设备 ✅
 
-3. **修改超时时间**（立即生效）：
+2. **修改超时时间**（立即生效）：
    ```yaml
    read_timeout_ms: 6000 → read_timeout_ms: 10000
    ```
    下次读取使用新超时时间 ✅
 
-4. **修改缓存策略**（立即生效）：
+3. **修改缓存策略**（立即生效）：
    ```yaml
    cache_strategy: 0 → cache_strategy: 1
    ```
