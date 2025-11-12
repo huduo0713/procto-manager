@@ -5,12 +5,9 @@ $PWD/depend/lib/:\
 $LD_LIBRARY_PATH
 ###############环境变量配置###################
 
-<<<<<<< HEAD
-=======
 # 更新配置文件
-mkdir -p /usr/runtime/protocol/mqtt/
-cp -f config.yaml /usr/runtime/protocol/mqtt/
->>>>>>> ba65310... [fix]配置文件拷贝到运行目录，方便调试
+mkdir -p /usr/runtime/protocol/bacnet/
+cp -f config.yaml /usr/runtime/protocol/bacnet/
 
 ###############以下脚本不需更改###################
 # 获取环境变量

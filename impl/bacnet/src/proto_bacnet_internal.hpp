@@ -196,6 +196,14 @@ inline constexpr uint8_t kMaxReconnectAttempts = 5;         // 最大重连次�
 inline constexpr uint32_t kReconnectIntervalMs = 3000;      // 重连间隔基准时间(毫秒)
 
 /* ========================================================================== */
+<<<<<<< HEAD
+=======
+/* System 系统配置                                                            */
+/* ========================================================================== */
+inline constexpr const char* kConfigPath = "/usr/runtime/protocol/bacnet/config.yaml"; // 配置文件路径
+
+/* ========================================================================== */
+>>>>>>> ba65310... [fix]配置文件拷贝到运行目录，方便调试
 /* HotConfig 热配置监控默认值                                                 */
 /* ========================================================================== */
 inline constexpr uint32_t kHotConfigPollingIntervalMs = 1000; // 配置文件轮询间隔(毫秒)
