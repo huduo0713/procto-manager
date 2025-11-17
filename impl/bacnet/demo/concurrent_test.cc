@@ -7,6 +7,8 @@
 #include <unistd.h>
 #include <time.h>
 
+#define device_id 1392827
+
 // 测试并发读取多个对象
 void test_concurrent_reads() {
     log_info("🔄 测试并发读取多个对象的值");
@@ -37,7 +39,7 @@ void test_concurrent_reads() {
     for (int i = 0; i < NUM_OBJECTS; i++) {
         // ✨ 新API：只需填写四元组 + value缓冲区，其他使用默认值
         bacnet_read_t read_req = BACNET_READ_INIT(
-            5678,                      // 设备实例
+            device_id,                      // 设备实例
             objects[i].object_type,    // 对象类型
             objects[i].object_instance,// 对象实例
             PROP_PRESENT_VALUE,        // 属性ID
@@ -66,7 +68,7 @@ void test_concurrent_reads() {
     for (int i = 0; i < NUM_OBJECTS; i++) {
         // ✨ 新API：只需填写四元组 + value缓冲区
         bacnet_read_t read_req = BACNET_READ_INIT(
-            5678,
+            device_id,
             objects[i].object_type,
             objects[i].object_instance,
             PROP_PRESENT_VALUE,
@@ -130,9 +132,9 @@ void test_repeated_reads() {
 
         // ✨ 新API：只需填写四元组 + value缓冲区
         bacnet_read_t read_req = BACNET_READ_INIT(
-            5678,
+            device_id,
             OBJECT_ANALOG_INPUT,
-            1,
+            0,
             PROP_PRESENT_VALUE,
             &value
         );
@@ -194,7 +196,7 @@ void test_concurrent_writes() {
     for (int i = 0; i < NUM_WRITES; i++) {
         // ✨ 新API：只需填写四元组 + value
         bacnet_write_t write_req = BACNET_WRITE_INIT(
-            5678,
+            device_id,
             writes[i].object_type,
             writes[i].object_instance,
             PROP_PRESENT_VALUE,
@@ -246,9 +248,9 @@ void test_plc_polling() {
 
         // ✨ 新API：只需填写四元组 + value缓冲区
         bacnet_read_t read_req = BACNET_READ_INIT(
-            5678,
+            device_id,
             OBJECT_ANALOG_INPUT,
-            1,
+            0,
             PROP_PRESENT_VALUE,
             &value
         );
@@ -275,7 +277,7 @@ void test_plc_polling() {
 
 int main() {
     log_info("🚀 BACnet 缓存机制测试程序");
-    log_info("目标设备: 5678 (Living Room Thermostat)");
+    log_info("目标设备: {} (Living Room Thermostat)", device_id);
     log_info("==========================================");
     log_info("");
 

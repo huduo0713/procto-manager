@@ -29,11 +29,9 @@ extern "C" {
  * - 用于 config_update() API 时，数值字段为 0 表示不更新
  * - 布尔字段为 -1 表示不更新，0=false, 1=true
  * - 配置优先级：用户传入 > config.yaml > 代码默认值
+ * - config_update() API 的字段更新规则详见该函数文档
  */
 typedef struct {
-    /* ==================== BACnet 协议栈开关 ==================== */
-    int8_t   enabled;                       /* BACnet协议栈是否启用 (-1=不更新, 0=false, 1=true) */
-    
     /* ==================== 设备发现配置 ==================== */
     uint32_t target_device_start;           /* 目标设备实例范围起始 (含，默认: 5678) */
     uint32_t target_device_end;             /* 目标设备实例范围结束 (含，默认: 5678) */
@@ -62,7 +60,7 @@ typedef struct {
     uint32_t reconnect_interval_ms;         /* 重连间隔 (毫秒，默认: 3000) */
     
     /* ==================== 热配置监控 ==================== */
-    int8_t   hot_config_enabled;            /* 是否启用热配置监控 (-1=不更新, 0=false, 1=true，默认: true) */
+    int8_t   hot_config_enabled;            /* 是否启用热配置监控 */
     uint32_t hot_config_polling_ms;         /* 配置文件轮询间隔 (毫秒，默认: 1000) */
 } bacnet_config_t;
 
@@ -86,13 +84,12 @@ typedef struct {
  * 
  * 示例：
  *   bacnet_config_t cfg = BACNET_CONFIG_INIT;
- *   cfg.enabled = true;              // 转换为 1，更新为 true
  *   cfg.hot_config_enabled = false;  // 转换为 0，更新为 false
  *   cfg.read_timeout_ms = 8000;      // 更新超时
  *   // 不设置的字段保持初始值，不会被更新
  */
 #define BACNET_CONFIG_INIT { \
-    -1, 0, 0, 0, 0, \
+    0, 0, 0, 0, \
     0, 0, {0}, 0, {0}, \
     0, 0, 0, 0, 0, \
     0, 0, 0, -1, 0 \
@@ -291,8 +288,14 @@ const char* proto_status_to_string(proto_status_t status);
  * 注意事项：
  * - 传入的配置结构体只需要填写需要修改的字段
  * - 数值字段为 0 时不更新，字符串为空时不更新
- * - 布尔字段为 -1 时不更新，0=false, 1=true (支持隐式转换)
  * - 配置文件格式会自动保留（注释、缩进等）
+ * 
+ * 布尔字段特殊说明（仅 hot_config_enabled）：
+ * - 类型为 int8_t，用于区分「不更新」和「更新为 false」
+ * - 传入 -1：跳过不更新该字段（保持配置文件中的原值）
+ * - 传入 0 或 false：更新配置文件为 false
+ * - 传入 1 或 true：更新配置文件为 true
+ * - 使用 BACNET_CONFIG_INIT 宏初始化时，布尔字段自动设为 -1
  * 
  * 示例 1: 只更新数值字段
  *   bacnet_config_t cfg = BACNET_CONFIG_INIT;
@@ -301,17 +304,16 @@ const char* proto_status_to_string(proto_status_t status);
  *   int ret = config_update(&cfg);
  * 
  * 示例 2: 更新布尔字段
- *   bacnet_config_t cfg = BACNET_CONFIG_INIT;
- *   cfg.enabled = true;               // 隐式转换为 1，更新为 true
- *   cfg.hot_config_enabled = false;   // 隐式转换为 0，更新为 false
+ *   bacnet_config_t cfg = BACNET_CONFIG_INIT;  // hot_config_enabled 初始化为 -1
+ *   cfg.hot_config_enabled = false;   // 设为 0，配置文件会被更新为 false
  *   int ret = config_update(&cfg);
  * 
- * 示例 3: 混合更新
- *   bacnet_config_t cfg = BACNET_CONFIG_INIT;
- *   cfg.read_timeout_ms = 5000;
- *   cfg.cache_strategy = 1;           // 保守策略
- *   cfg.hot_config_enabled = true;    // 会更新
- *   // cfg.enabled 保持为 -1，不会更新
+ * 示例 3: 混合更新（部分字段更新，部分不更新）
+ *   bacnet_config_t cfg = BACNET_CONFIG_INIT;  // hot_config_enabled = -1
+ *   cfg.read_timeout_ms = 5000;        // 更新超时
+ *   cfg.cache_strategy = 1;            // 更新为保守策略
+ *   cfg.hot_config_enabled = true;     // 更新为 true
+ *   // cfg.target_device_start 保持为 0，配置文件中该字段不会被修改
  *   int ret = config_update(&cfg);
  */
 int config_update(const bacnet_config_t *cfg);

@@ -38,6 +38,7 @@ wsl rsync -avz --delete -e 'ssh -p %SERVER_PORT%' ^
     --exclude='*.so' ^
     --exclude='*.log' ^
     --exclude='.git/' ^
+    --exclude='.git/**' ^
     --exclude='*.tmp' ^
     --exclude='CMakeCache.txt' ^
     --exclude='CMakeFiles/' ^

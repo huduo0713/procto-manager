@@ -147,17 +147,16 @@ namespace defaults {
 
 
 /* ========================================================================== */
-/* System 系统配置                                                            */
-/* ========================================================================== */
-inline constexpr const char* kConfigPath = "../config.yaml"; // 配置文件路径
-
-
-/* ========================================================================== */
 /* Common 通用配置默认值                                                      */
 /* ========================================================================== */
-inline constexpr const char* kEnvironment = "development";  // 运行环境标识
-inline constexpr const char* kLogLevel = "debug";           // 日志等级
-inline constexpr const char* kLogFile = "bacnet.log";       // 日志文件路径
+// inline constexpr const char* kEnvironment = "development";  // 运行环境标识
+// inline constexpr const char* kLogLevel = "debug";           // 日志等级
+// inline constexpr const char* kLogFile = "bacnet.log";       // 日志文件路径
+
+/* ========================================================================== */
+/* System 系统配置                                                            */
+/* ========================================================================== */
+inline constexpr const char* kConfigPath = "/usr/runtime/protocol/bacnet/config.yaml"; // 配置文件路径
 
 /* ========================================================================== */
 /* Discovery 设备发现配置默认值                                               */
@@ -196,14 +195,6 @@ inline constexpr uint8_t kMaxReconnectAttempts = 5;         // 最大重连次�
 inline constexpr uint32_t kReconnectIntervalMs = 3000;      // 重连间隔基准时间(毫秒)
 
 /* ========================================================================== */
-<<<<<<< HEAD
-=======
-/* System 系统配置                                                            */
-/* ========================================================================== */
-inline constexpr const char* kConfigPath = "/usr/runtime/protocol/bacnet/config.yaml"; // 配置文件路径
-
-/* ========================================================================== */
->>>>>>> ba65310... [fix]配置文件拷贝到运行目录，方便调试
 /* HotConfig 热配置监控默认值                                                 */
 /* ========================================================================== */
 inline constexpr uint32_t kHotConfigPollingIntervalMs = 1000; // 配置文件轮询间隔(毫秒)
@@ -259,9 +250,6 @@ struct ConfigMetadata {
     // HotConfig
     ConfigSource hot_config_enabled{ConfigSource::Default};
     ConfigSource hot_config_polling_interval_ms{ConfigSource::Default};
-    
-    // BACnet enabled
-    ConfigSource bacnet_enabled{ConfigSource::Default};
 };
 
 /* -------------------------------------------------------------------------- */

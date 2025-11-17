@@ -67,19 +67,11 @@ inline const char* source_to_string(bacnet::ConfigSource src) {
 // 打印配置表（使用元数据标记来源）
 void print_config_table(const bacnet_config_t *cfg, const bacnet::ConfigMetadata *meta) {
     log_info("┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓");
-    log_info("┃          BACnet Configuration Loaded                         ┃");
-    log_info("┣━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┫");
-    
-    // BACnet基础配置
-    log_info("┃ [BACnet]                                                     ┃");
-    log_info("┃   enabled            : {:20s}  [{:7s}] ┃", 
-             cfg->enabled ? "true" : "false", 
-             source_to_string(meta->bacnet_enabled));
-    
-    log_info("┣━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┫");
+    log_info("┊          BACnet Configuration Loaded                         ┃");
+    log_info("┣━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┫");
     
     // Discovery配置
-    log_info("┃ [Discovery]                                                  ┃");
+    log_info("┊ [Discovery]                                                  ┃");
     log_info("┃   target_device_start: {:20d}  [{:7s}] ┃", 
              cfg->target_device_start,
              source_to_string(meta->target_device_start));
@@ -180,9 +172,6 @@ int bacnet_load_config_from_yaml(const char *yaml_path, bacnet_config_t *cfg)
 
     // 1. 初始化为默认值（兜底配置）
     std::memset(cfg, 0, sizeof(*cfg));
-    
-    // BACnet 协议栈开关
-    cfg->enabled = true;
     
     // 设备发现配置
     cfg->target_device_start = kTargetDeviceStart;
@@ -293,12 +282,7 @@ int bacnet_load_config_from_yaml(const char *yaml_path, bacnet_config_t *cfg)
                     }
                 } else {
                     // 这是一个值，根据当前 section 和 key 设置配置
-                    if (current_section == Section::Bacnet) {
-                        if (last_key == "enabled") {
-                            cfg->enabled = parse_bool(value, true);
-                            g_config_metadata.bacnet_enabled = bacnet::ConfigSource::Yaml;
-                        }
-                    } else if (current_section == Section::Discovery) {
+                    if (current_section == Section::Discovery) {
                         if (last_key == "target_device_start") {
                             cfg->target_device_start = std::atoi(value);
                             g_config_metadata.target_device_start = bacnet::ConfigSource::Yaml;
@@ -760,10 +744,7 @@ int config_update(const bacnet_config_t *cfg) {
         // 根据当前 section 更新配置值
         char value_buf[256];  // 扩大缓冲区以容纳长路径（最大 127 字节 + 引号 + null）
         
-        switch (current_section) {            case CurrentSection::Bacnet:
-                // bacnet.enabled (默认不更新布尔字段)
-                break;
-
+        switch (current_section) {
             case CurrentSection::Discovery:
                 if (cfg->target_device_start > 0) {
                     snprintf(value_buf, sizeof(value_buf), "%u", cfg->target_device_start);

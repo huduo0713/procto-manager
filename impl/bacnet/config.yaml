@@ -2,6 +2,15 @@
 # BACnet 协议配置文件
 
 # ==================================
+# 通用配置 (Common Configuration)
+# ----------------------------------
+
+# common:
+#   environment: "production"       # 运行环境: production/development
+#   log_level: "info"               # 日志级别: trace/debug/info/warn/error
+#   log_file: "/var/log/bacnet.log" # 日志文件路径
+
+# ==================================
 # 协议配置 (Protocols Configuration)
 # ----------------------------------
 
@@ -9,7 +18,6 @@ protocols:
 
   # --- BACnet 协议配置块 ---
   bacnet:
-    enabled: true                 # 是否启用 BACnet 协议栈
 
     # 设备发现与目标设备配置
     discovery:
