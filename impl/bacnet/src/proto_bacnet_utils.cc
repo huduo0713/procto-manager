@@ -9,6 +9,8 @@
 #include <cctype>
 #include <strings.h>
 #include <vector>
+#include <unistd.h>      // fsync, fileno, getpid
+#include <sys/file.h>    // flock
 
 extern "C" {
 #include "bacnet/bacdef.h"
@@ -54,6 +56,7 @@ enum class Section {
     Discovery,
     LocalDevice,
     Network,
+    MSTP,          // 新增：MS/TP 串口配置 section
     Services,
     Connection,
     HotConfig
@@ -109,6 +112,31 @@ void print_config_table(const bacnet_config_t *cfg, const bacnet::ConfigMetadata
     log_info("┃   broadcast_address  : {:20s}  [{:7s}] ┃", 
              cfg->broadcast_address,
              source_to_string(meta->broadcast_address));
+    
+    log_info("┣━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┫");
+    
+    // MS/TP 配置（如果启用）
+    if (cfg->mstp_port[0] != '\0') {
+        log_info("┃ [MS/TP] (RS-485 Serial)                                      ┃");
+        log_info("┃   port               : {:20s}  [{:7s}] ┃", 
+                 cfg->mstp_port,
+                 source_to_string(meta->mstp_port));
+        log_info("┃   baud_rate          : {:20d}  [{:7s}] ┃", 
+                 cfg->mstp_baud,
+                 source_to_string(meta->mstp_baud));
+        log_info("┃   mac_address        : {:20d}  [{:7s}] ┃", 
+                 cfg->mstp_mac,
+                 source_to_string(meta->mstp_mac));
+        log_info("┃   max_master         : {:20d}  [{:7s}] ┃", 
+                 cfg->mstp_max_master,
+                 source_to_string(meta->mstp_max_master));
+        log_info("┃   max_info_frames    : {:20d}  [{:7s}] ┃", 
+                 cfg->mstp_max_frames,
+                 source_to_string(meta->mstp_max_frames));
+    } else {
+        log_info("┃ [MS/TP] (RS-485 Serial)                                      ┃");
+        log_info("┃   Status: Disabled (no port configured)                      ┃");
+    }
     
     log_info("┣━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┫");
     
@@ -187,6 +215,13 @@ int bacnet_load_config_from_yaml(const char *yaml_path, bacnet_config_t *cfg)
     cfg->port = kPort;
     copy_str(cfg->broadcast_address, sizeof(cfg->broadcast_address), kBroadcastAddress);
 
+    // MS/TP 串口数据链路层配置
+    copy_str(cfg->mstp_port, sizeof(cfg->mstp_port), kMstpPort);
+    cfg->mstp_baud = kMstpBaudRate;
+    cfg->mstp_mac = kMstpMacAddress;
+    cfg->mstp_max_master = kMstpMaxMaster;
+    cfg->mstp_max_frames = kMstpMaxInfoFrames;
+
     // 服务行为配置
     cfg->read_timeout_ms = kReadTimeoutMs;
     cfg->write_timeout_ms = kWriteTimeoutMs;
@@ -254,7 +289,15 @@ int bacnet_load_config_from_yaml(const char *yaml_path, bacnet_config_t *cfg)
                             current_section = Section::Bacnet;
                             is_section_key = true;
                         }
-                    } else if (current_section == Section::Bacnet) {
+                    } else if (current_section == Section::Bacnet || 
+                               current_section == Section::Discovery || 
+                               current_section == Section::LocalDevice || 
+                               current_section == Section::Network || 
+                               current_section == Section::MSTP || 
+                               current_section == Section::Services || 
+                               current_section == Section::Connection || 
+                               current_section == Section::HotConfig) {
+                        // 在 bacnet 层级下，允许在各个子 section 之间切换
                         if (strcmp(value, "discovery") == 0) {
                             current_section = Section::Discovery;
                             is_section_key = true;
@@ -263,6 +306,9 @@ int bacnet_load_config_from_yaml(const char *yaml_path, bacnet_config_t *cfg)
                             is_section_key = true;
                         } else if (strcmp(value, "network") == 0) {
                             current_section = Section::Network;
+                            is_section_key = true;
+                        } else if (strcmp(value, "mstp") == 0) {
+                            current_section = Section::MSTP;
                             is_section_key = true;
                         } else if (strcmp(value, "services") == 0) {
                             current_section = Section::Services;
@@ -314,6 +360,24 @@ int bacnet_load_config_from_yaml(const char *yaml_path, bacnet_config_t *cfg)
                         } else if (last_key == "broadcast_address") {
                             copy_str(cfg->broadcast_address, sizeof(cfg->broadcast_address), value);
                             g_config_metadata.broadcast_address = bacnet::ConfigSource::Yaml;
+                        }
+                    } else if (current_section == Section::MSTP) {
+                        // MS/TP 串口配置解析
+                        if (last_key == "port") {
+                            copy_str(cfg->mstp_port, sizeof(cfg->mstp_port), value);
+                            g_config_metadata.mstp_port = bacnet::ConfigSource::Yaml;
+                        } else if (last_key == "baud_rate") {
+                            cfg->mstp_baud = std::atoi(value);
+                            g_config_metadata.mstp_baud = bacnet::ConfigSource::Yaml;
+                        } else if (last_key == "mac_address") {
+                            cfg->mstp_mac = std::atoi(value);
+                            g_config_metadata.mstp_mac = bacnet::ConfigSource::Yaml;
+                        } else if (last_key == "max_master") {
+                            cfg->mstp_max_master = std::atoi(value);
+                            g_config_metadata.mstp_max_master = bacnet::ConfigSource::Yaml;
+                        } else if (last_key == "max_info_frames") {
+                            cfg->mstp_max_frames = std::atoi(value);
+                            g_config_metadata.mstp_max_frames = bacnet::ConfigSource::Yaml;
                         }
                     } else if (current_section == Section::Services) {
                         if (last_key == "read_timeout_ms") {
@@ -841,17 +905,66 @@ int config_update(const bacnet_config_t *cfg) {
         }
     }
 
-    // 4. 写回文件
-    file = fopen(config_path, "w");
+    // 4. 原子写入：使用文件锁 + 唯一临时文件名（防止多进程/多线程竞态）
+    
+    // 4.1 使用锁文件保护写入过程
+    std::string lock_path = std::string(config_path) + ".lock";
+    FILE *lock_file = fopen(lock_path.c_str(), "w");
+    if (!lock_file) {
+        log_error("[BACnet][Config] Failed to create lock file: {}", lock_path);
+        return PROTO_ERROR_WRITE;
+    }
+    
+    // 使用 flock 实现文件锁（会阻塞等待）
+    int lock_fd = fileno(lock_file);
+    if (flock(lock_fd, LOCK_EX) != 0) {
+        log_error("[BACnet][Config] Failed to acquire file lock");
+        fclose(lock_file);
+        return PROTO_ERROR_WRITE;
+    }
+    
+    log_debug("[BACnet][Config] File lock acquired, starting atomic write");
+    
+    // 4.2 生成唯一临时文件名（PID + 时间戳，避免多进程冲突）
+    char temp_path[512];
+    snprintf(temp_path, sizeof(temp_path), "%s.tmp.%d.%lu", 
+             config_path, getpid(), (unsigned long)time(nullptr));
+    
+    // 4.3 写入临时文件
+    file = fopen(temp_path, "w");
     if (!file) {
-        log_error("[BACnet][Config] Failed to open config file for writing: {}", config_path);
+        log_error("[BACnet][Config] Failed to open temp config file for writing: {}", temp_path);
+        flock(lock_fd, LOCK_UN);
+        fclose(lock_file);
+        remove(lock_path.c_str());
         return PROTO_ERROR_WRITE;
     }
 
     for (const auto &line : lines) {
         fputs(line.c_str(), file);
     }
+    
+    // 4.4 强制刷新到磁盘
+    fflush(file);
+    fsync(fileno(file));  // 确保数据写入磁盘
     fclose(file);
+    
+    // 4.5 原子替换：rename 是原子操作，不会出现半成品文件
+    if (rename(temp_path, config_path) != 0) {
+        log_error("[BACnet][Config] Failed to replace config file");
+        remove(temp_path);
+        flock(lock_fd, LOCK_UN);
+        fclose(lock_file);
+        remove(lock_path.c_str());
+        return PROTO_ERROR_WRITE;
+    }
+    
+    // 4.6 释放锁并清理
+    flock(lock_fd, LOCK_UN);
+    fclose(lock_file);
+    remove(lock_path.c_str());  // 删除锁文件
+    
+    log_debug("[BACnet][Config] Atomic write completed, lock released");
 
     log_info("[BACnet][Config] Configuration updated successfully ({} items changed)", updates_count);
     log_info("[BACnet][Config] File: {}", config_path);

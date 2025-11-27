@@ -202,6 +202,144 @@ void trigger_callback(BacnetContext *context, const char* type, proto_status_t s
 }
 
 /* -------------------------------------------------------------------------- */
+/* 初始化所有数据链路层（多数据链路层模式）                                      */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * @brief 初始化所有配置的数据链路层
+ * 
+ * 功能说明：
+ * - 当编译启用 BACDL_MULTIPLE 时，支持同时初始化多个数据链路层
+ * - BACnet/IP（以太网 UDP）和 MS/TP（串口 RS-485）可以并行运行
+ * - 协议栈会自动维护设备地址路由表，根据设备发现结果选择正确的数据链路层
+ * - 用户可选在 bacnet_read_t/bacnet_write_t 中指定 datalink_hint 强制路由
+ * 
+ * 初始化顺序：
+ * 1. BACnet/IP: 以太网 UDP 传输（适用于局域网设备）
+ * 2. MS/TP: RS-485 串口主从令牌传递（适用于现场总线设备）
+ * 
+ * 配置来源：
+ * - BACnet/IP 参数: interface_name, port, broadcast_address
+ * - MS/TP 参数: mstp_port, mstp_baud, mstp_mac, mstp_max_master, mstp_max_frames
+ * 
+ * @param context BACnet 上下文指针
+ * @return PROTO_SUCCESS 成功，其他值表示失败
+ */
+proto_status_t initialize_all_datalinks(BacnetContext *context)
+{
+    if (!context) {
+        return PROTO_ERROR_PARAM;
+    }
+
+    log_info("[BACnet][DataLink] Initializing multiple datalink layers...");
+
+#if defined(BACDL_MULTIPLE)
+    /* ========================================================================== */
+    /* 1. 初始化 BACnet/IP 数据链路层（以太网 UDP）                                */
+    /* ========================================================================== */
+    
+    log_info("[BACnet][DataLink] [1/2] Initializing BACnet/IP (Ethernet)...");
+    
+    // 设置 UDP 端口
+    bip_set_port(context->config.port);
+    log_debug("[BACnet][DataLink][BIP] Port set to {}", context->config.port);
+    
+    // 初始化 BACnet/IP 数据链路层
+    // 参数：
+    //   - interface_name: 网络接口名称（如 "eth0"），空字符串表示自动选择
+    const char *ifname = (context->config.interface_name[0] != '\0') 
+                          ? context->config.interface_name 
+                          : nullptr;
+    
+    if (!bip_init(const_cast<char*>(ifname))) {
+        log_error("[BACnet][DataLink][BIP] Failed to initialize BACnet/IP on interface '{}'", 
+                  ifname ? ifname : "<auto>");
+        return PROTO_ERROR_INIT;
+    }
+    
+    log_info("[BACnet][DataLink][BIP] Initialized successfully (interface: {}, port: {})",
+             ifname ? ifname : "<auto>", context->config.port);
+
+    /* ========================================================================== */
+    /* 2. 初始化 MS/TP 数据链路层（RS-485 串口）                                   */
+    /* ========================================================================== */
+    
+    // ⭐ 检查 BACnet 库是否编译了 MS/TP 支持
+    // 注意：即使定义了 BACDL_MULTIPLE，也需要 BACnet 库编译时启用 MS/TP
+#if defined(BACDL_MSTP)
+    // 检查是否配置了 MS/TP 串口路径
+    if (context->config.mstp_port[0] != '\0') {
+        log_info("[BACnet][DataLink] [2/2] Initializing MS/TP (RS-485 Serial)...");
+        
+        // 设置波特率（常用值：9600, 19200, 38400, 76800）
+        dlmstp_set_baud_rate(context->config.mstp_baud);
+        log_debug("[BACnet][DataLink][MSTP] Baud rate set to {} bps", context->config.mstp_baud);
+        
+        // 设置 MAC 地址（0-127，唯一标识本设备）
+        dlmstp_set_mac_address(context->config.mstp_mac);
+        log_debug("[BACnet][DataLink][MSTP] MAC address set to {}", context->config.mstp_mac);
+        
+        // 设置最大主站地址（默认 127）
+        dlmstp_set_max_master(context->config.mstp_max_master);
+        log_debug("[BACnet][DataLink][MSTP] Max master set to {}", context->config.mstp_max_master);
+        
+        // 设置最大信息帧数（默认 1，决定单次令牌持有可发送的帧数）
+        dlmstp_set_max_info_frames(context->config.mstp_max_frames);
+        log_debug("[BACnet][DataLink][MSTP] Max info frames set to {}", context->config.mstp_max_frames);
+        
+        // 初始化 MS/TP 数据链路层
+        // 参数：
+        //   - port: 串口设备路径（如 "/dev/ttyUSB0", "/dev/ttyS1"）
+        if (!dlmstp_init(const_cast<char*>(context->config.mstp_port))) {
+            log_error("[BACnet][DataLink][MSTP] Failed to initialize MS/TP on port '{}'", 
+                      context->config.mstp_port);
+            // MS/TP 初始化失败不影响 BACnet/IP，继续运行
+            log_warn("[BACnet][DataLink][MSTP] Continuing with BACnet/IP only");
+        } else {
+            log_info("[BACnet][DataLink][MSTP] Initialized successfully (port: {}, baud: {}, MAC: {})",
+                     context->config.mstp_port, context->config.mstp_baud, context->config.mstp_mac);
+        }
+    } else {
+        log_info("[BACnet][DataLink] [2/2] MS/TP not configured, skipping");
+        log_debug("[BACnet][DataLink][MSTP] Hint: Set 'mstp.port' in config.yaml to enable");
+    }
+#else
+    // BACnet 库未编译 MS/TP 支持
+    if (context->config.mstp_port[0] != '\0') {
+        log_warn("[BACnet][DataLink] MS/TP configured but library not compiled with BACDL_MSTP");
+        log_warn("[BACnet][DataLink] Hint: Rebuild BACnet library with MS/TP support");
+    }
+    log_info("[BACnet][DataLink] [2/2] MS/TP not available (library not compiled with BACDL_MSTP)");
+#endif  // BACDL_MSTP
+
+    /* ========================================================================== */
+    /* 3. 数据链路层初始化完成                                                    */
+    /* ========================================================================== */
+    
+    log_info("[BACnet][DataLink] All datalink layers initialized successfully");
+    log_info("[BACnet][DataLink] Protocol stack will auto-route requests based on device address table");
+    log_info("[BACnet][DataLink] Optional: Use 'datalink_hint' field to force specific datalink");
+    
+    return PROTO_SUCCESS;
+
+#else
+    /* ========================================================================== */
+    /* 单数据链路层模式（编译时未启用 BACDL_MULTIPLE）                              */
+    /* ========================================================================== */
+    
+    log_warn("[BACnet][DataLink] Single datalink mode (BACDL_MULTIPLE not defined)");
+    log_warn("[BACnet][DataLink] Only one datalink layer will be initialized at compile time");
+    
+    // 单数据链路层模式下，dlenv_init() 会根据编译宏初始化对应的数据链路层
+    // - BACDL_BIP=1  -> BACnet/IP
+    // - BACDL_MSTP=1 -> MS/TP
+    // 这里不需要额外的初始化代码
+    
+    return PROTO_SUCCESS;
+#endif
+}
+
+/* -------------------------------------------------------------------------- */
 /* 初始化BACnet上下文                                                          */
 /* -------------------------------------------------------------------------- */
 
@@ -242,8 +380,16 @@ proto_status_t initialize_context(BacnetContext *context)
     address_init();
     log_debug("[BACnet] address_init completed");
 
+    // 初始化数据链路层环境（加载环境变量等）
     dlenv_init();
     log_debug("[BACnet] dlenv_init completed");
+
+    // 初始化所有配置的数据链路层（BACnet/IP + MS/TP 等）
+    proto_status_t dl_status = initialize_all_datalinks(context);
+    if (dl_status != PROTO_SUCCESS) {
+        log_error("[BACnet] Failed to initialize datalink layers (status: {})", static_cast<int>(dl_status));
+        return dl_status;
+    }
 
     // 注册回调处理函数
     register_bacnet_handlers(context);
@@ -572,21 +718,34 @@ int plc_proto_read(void *req)
     if (rc == PROTO_SUCCESS) {
         // 创建或更新对象状态
         BacnetContext::ObjectState &state = context->object_states[key];
+        
+        // 检查是否有旧缓存
+        bool has_old_cache = state.has_valid_cache;
+        
         state.active_invoke_id = invoke_id;
         state.original_request = read_req;
         state.status = PROTO_NO_DATA;  // 请求已发送，等待响应
-        
-        // 如果有旧缓存，可以立即返回（但标记为NO_DATA）
-        if (state.has_valid_cache && read_req->value) {
-            *read_req->value = state.cached_value;
-        }
         
         char invoke_buf[16];
         log_debug("[PLC] Request sent: {}-{}, {} (invoke_id: {})",
                   obj_type_name, read_req->object_instance, prop_name,
                   invoke_id_to_string(invoke_id, invoke_buf, sizeof(invoke_buf)));
+        
+        // 🔑 关键逻辑：
+        // - 有旧缓存：复制旧数据并返回 PROTO_SUCCESS（激进策略：后台更新，前台先用旧数据）
+        // - 无缓存：返回 PROTO_NO_DATA（首次请求，等待响应）
+        if (has_old_cache && read_req->value) {
+            *read_req->value = state.cached_value;
+            log_debug("[PLC] Returning cached data while updating in background (age: {}ms)",
+                      std::chrono::duration_cast<std::chrono::milliseconds>(
+                          std::chrono::steady_clock::now() - state.timestamp).count());
+            return PROTO_SUCCESS;
+        } else {
+            return PROTO_NO_DATA;
+        }
     }
     
+    // 发送失败，返回错误码
     return rc;
 }
 

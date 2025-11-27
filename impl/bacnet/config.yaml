@@ -37,6 +37,18 @@ protocols:
       port: 47808                 # BACnet/IP UDP 端口 (默认 47808)
       broadcast_address: "255.255.255.255"  # 广播地址，用于 Who-Is
 
+    # MS/TP（串口）数据链路层配置
+    # 说明：
+    #   - 启用多数据链路层模式后，可同时使用 BACnet/IP（以太网）和 MS/TP（串口）
+    #   - 协议栈会根据设备地址自动路由到正确的数据链路层
+    #   - 如果不需要 MS/TP，保持 port 为空即可
+    mstp:
+      port: "/dev/ttyUSB0"        # 串口设备路径（如 "/dev/ttyUSB0"），留空则不启用 MS/TP
+      baud_rate: 38400            # 波特率（支持: 9600, 19200, 38400, 76800）
+      mac_address: 1              # MAC 地址（0-127，必须在网络中唯一）
+      max_master: 127             # 最大主站地址（默认 127）
+      max_info_frames: 1          # 单次令牌持有可发送的最大帧数（默认 1）
+
     # 服务行为配置
     services:
       read_timeout_ms: 6000       # 读取操作等待确认的超时时间

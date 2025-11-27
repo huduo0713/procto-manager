@@ -3879,6 +3879,908 @@ plc_proto_read({5678, AI, 1, DESC})  发送请求 (不同四元组!)
 
 ---
 
+## 🌐 多数据链路层支持（Multi-Datalink）
+
+### 📋 概述
+
+从 **v5.0** 开始，BACnet 协议栈支持**同时使用多种物理层传输方式**，实现真正的多网融合通信。
+
+**典型应用场景**：
+- **BACnet/IP（以太网 UDP）**：访问局域网内的温度传感器、风机、照明控制器等 IP 设备
+- **MS/TP（RS-485 串口）**：访问现场总线的 VAV 控制器、阀门执行器、传统 DDC 等串口设备
+
+**核心优势**：
+- ✅ PLC 可在同一程序中同时访问两种网络的设备
+- ✅ 无需重启或切换协议栈，真正的无缝集成
+- ✅ 协议栈自动维护设备路由表，透明化数据链路层差异
+- ✅ 零配置架构，首次读写时自动初始化，程序退出自动清理
+
+---
+
+### 🎯 架构设计
+
+**设计理念**：启动时初始化所有配置的数据链路层 + 自动路由 + 可选显式指定
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                          BACnet 协议栈                                   │
+├─────────────────────────────────────────────────────────────────────────┤
+│  应用层 API (零配置):                                                    │
+│    plc_proto_read(req)   // 首次调用自动初始化                           │
+│    req.datalink_hint = AUTO (默认自动路由)                               │
+├─────────────────────────────────────────────────────────────────────────┤
+│  设备地址路由表 (协议栈维护):                                            │
+│    Device 5678 @ 192.168.1.100  → BACnet/IP (以太网)                     │
+│    Device 1234 @ MSTP MAC 5     → MS/TP (串口)                           │
+│    Device 9999 @ 10.0.0.50      → BACnet/IP (以太网)                     │
+├─────────────────────────────────────────────────────────────────────────┤
+│  数据链路层 (并行运行):                                                  │
+│    ┌────────────────────┐    ┌────────────────────┐                     │
+│    │   BACnet/IP        │    │      MS/TP         │                     │
+│    │  (UDP 47808)       │    │  (/dev/ttyUSB0)    │                     │
+│    │  Baud: N/A         │    │  Baud: 38400       │                     │
+│    │  MAC: N/A          │    │  MAC: 1            │                     │
+│    └────────────────────┘    └────────────────────┘                     │
+└─────────────────────────────────────────────────────────────────────────┘
+           │                            │
+           ▼                            ▼
+    以太网 BACnet 设备            RS-485 MS/TP 设备
+  (温度传感器、风机等)         (VAV 控制器、阀门等)
+```
+
+**工作流程**：
+1. **初始化阶段**：读取 `config.yaml`，初始化所有配置的数据链路层（BIP 必定启用，MS/TP 可选）
+2. **设备发现**：通过 Who-Is 广播发现设备，协议栈记录设备地址和对应的数据链路层
+3. **自动路由**：后续读写操作根据设备地址自动选择正确的数据链路层
+4. **显式指定**（可选）：通过 `datalink_hint` 字段强制指定数据链路层，跳过路由查询
+
+---
+
+### 💻 API 扩展
+
+#### 1. 新增枚举：`bacnet_datalink_type_t`
+
+```c
+/**
+ * @brief 数据链路层类型枚举
+ * 
+ * 说明：
+ * - AUTO: 协议栈根据设备地址自动选择（推荐，默认）
+ * - BIP:  强制使用 BACnet/IP（以太网 UDP）
+ * - MSTP: 强制使用 MS/TP（RS-485 串口）
+ * - 其他类型（ETHERNET/BIP6/BSC）保留，暂未实现
+ */
+typedef enum {
+    BACNET_DATALINK_AUTO = 0,    // 自动检测（默认，推荐）
+    BACNET_DATALINK_BIP,         // BACnet/IP（以太网 UDP）
+    BACNET_DATALINK_MSTP,        // MS/TP（RS-485 串口）
+    BACNET_DATALINK_ETHERNET,    // BACnet/Ethernet（保留）
+    BACNET_DATALINK_BIP6,        // BACnet/IPv6（保留）
+    BACNET_DATALINK_BSC          // BACnet/SC（保留）
+} bacnet_datalink_type_t;
+```
+
+#### 2. 扩展读写结构体
+
+```c
+/**
+ * @brief BACnet 读取请求结构体
+ */
+typedef struct {
+    uint32_t device_instance;           // 目标设备实例 ID
+    uint16_t object_type;               // 对象类型（如 OBJECT_ANALOG_INPUT）
+    uint32_t object_instance;           // 对象实例 ID
+    uint32_t property_id;               // 属性 ID（如 PROP_PRESENT_VALUE）
+    int32_t  array_index;               // 数组索引（-1 表示整个属性）
+    bacnet_data_value_t *value;         // 输出缓冲区
+    bacnet_datalink_type_t datalink_hint;  // ⭐ 新增：数据链路层提示
+} bacnet_read_t;
+
+/**
+ * @brief BACnet 写入请求结构体
+ */
+typedef struct {
+    uint32_t device_instance;
+    uint16_t object_type;
+    uint32_t object_instance;
+    uint32_t property_id;
+    int32_t  array_index;
+    bacnet_data_value_t value;
+    uint8_t priority;
+    bacnet_datalink_type_t datalink_hint;  // ⭐ 新增：数据链路层提示
+} bacnet_write_t;
+```
+
+#### 3. 初始化宏更新
+
+```c
+// 读取初始化宏（datalink_hint 默认为 AUTO）
+#define BACNET_READ_INIT(dev, obj_type, obj_inst, prop, out_val) \
+    { \
+        .device_instance = (dev), \
+        .object_type = (obj_type), \
+        .object_instance = (obj_inst), \
+        .property_id = (prop), \
+        .array_index = -1, \
+        .value = (out_val), \
+        .datalink_hint = BACNET_DATALINK_AUTO  /* ⭐ 默认自动路由 */ \
+    }
+
+// 写入初始化宏（datalink_hint 默认为 AUTO）
+#define BACNET_WRITE_INIT(dev, obj_type, obj_inst, prop, val) \
+    { \
+        .device_instance = (dev), \
+        .object_type = (obj_type), \
+        .object_instance = (obj_inst), \
+        .property_id = (prop), \
+        .array_index = -1, \
+        .value = (val), \
+        .priority = 0, \
+        .datalink_hint = BACNET_DATALINK_AUTO  /* ⭐ 默认自动路由 */ \
+    }
+```
+
+---
+
+### ⚙️ 配置支持
+
+#### 配置文件示例（`config.yaml`）
+
+```yaml
+protocols:
+  bacnet:
+    # BACnet/IP 网络配置（必须）
+    network:
+      interface: "eth0"        # 网络接口名称（留空则自动选择）
+      port: 47808              # UDP 端口（默认 47808）
+      broadcast_address: "255.255.255.255"  # 广播地址
+
+    # MS/TP 串口配置（可选）
+    mstp:
+      port: "/dev/ttyUSB0"     # 串口设备路径（留空则不启用 MS/TP）
+      baud_rate: 38400         # 波特率（常用: 9600, 19200, 38400, 76800）
+      mac_address: 1           # MAC 地址（0-127，网络内唯一）
+      max_master: 127          # 最大主站地址（默认 127）
+      max_info_frames: 1       # 单次令牌可发送的最大帧数（默认 1）
+```
+
+**配置说明**：
+- **`network` section**：BACnet/IP 必定启用，即使未配置也会使用默认值
+- **`mstp.port`**：
+  - 留空或注释：不启用 MS/TP，只使用 BACnet/IP
+  - 填写路径（如 `"/dev/ttyUSB0"`）：尝试初始化 MS/TP
+    - 成功：BIP + MSTP 双网运行
+    - 失败（设备不存在）：降级为 BIP 单网运行
+
+---
+
+### 🔨 编译配置
+
+#### 1. CMakeLists.txt 配置
+
+```cmake
+# ============================================================
+# 启用多数据链路层支持
+# ============================================================
+
+# 1. 启用多数据链路层架构（必须）
+add_definitions(-DBACDL_MULTIPLE=1)
+
+# 2. 链接到支持 MS/TP 的 BACnet 库（必须）
+set(PROTOCOL_LIBS bacnet-stack yaml)  # 使用 libbacnet-stack.a
+
+# 说明：
+#   - BACDL_MULTIPLE=1: 启用多数据链路层模式，允许运行时初始化多个数据链路层
+#   - bacnet-stack: 链接到 libbacnet-stack.a，该库必须编译了 MS/TP 支持
+#   - 如果库未编译 MS/TP（未定义 BACDL_MSTP），运行时会优雅降级到 BIP 单网
+```
+
+#### 2. BACnet 库编译要求
+
+**检查当前库是否支持 MS/TP**：
+
+```bash
+# 方法 1：检查符号表
+nm depend/lib/libbacnet-stack.a | grep dlmstp
+
+# 期望输出（有 MS/TP 支持）：
+# 0000000000000dd0 T dlmstp_init
+# 0000000000000000 T dlmstp_set_baud_rate
+# 0000000000000bd0 T dlmstp_set_mac_address
+# ...
+
+# 如果无输出：库不支持 MS/TP，需要重新编译
+```
+
+**重新编译 BACnet 库以支持 MS/TP**：
+
+```bash
+# 1. 进入 BACnet 库源码目录
+cd path/to/bacnet-stack
+
+# 2. 启用 BACDL_ALL 宏（包含所有数据链路层）
+export CFLAGS="-DBACDL_ALL=1"
+
+# 3. 编译
+make clean
+make
+
+# 4. 安装到项目依赖目录
+cp lib/libbacnet.a /path/to/procto-manager-hd/impl/bacnet/depend/lib/libbacnet-stack.a
+```
+
+**编译宏说明**：
+
+| 宏 | 作用域 | 说明 |
+|----|--------|------|
+| `BACDL_MULTIPLE=1` | 项目编译时 | 启用多数据链路层架构（必须） |
+| `BACDL_ALL=1` | BACnet 库编译时 | 编译所有数据链路层实现（包含 MS/TP） |
+| `BACDL_MSTP` | BACnet 库编译时 | 由 `BACDL_ALL` 自动定义，表示库包含 MS/TP 实现 |
+
+---
+
+### 🔧 初始化流程对比
+
+#### 方式 1：之前（单数据链路层 - BACnet/IP）
+
+```cpp
+proto_status_t initialize_context(BacnetContext *context) {
+    // 协议栈基础初始化
+    Device_Init(nullptr);
+    address_init();
+    
+    // ⭐ 数据链路层自动初始化（隐式）
+    dlenv_init();  // 自动初始化 BACnet/IP，无需额外配置
+    
+    // 注册回调
+    register_bacnet_handlers(context);
+    return PROTO_SUCCESS;
+}
+```
+
+**特点**：
+- ✅ **简单**：只需 `dlenv_init()` 一行代码
+- ✅ **自动**：根据环境变量或默认配置自动初始化 BACnet/IP
+- ❌ **单一**：只能使用一种数据链路层（BACnet/IP）
+- ❌ **不灵活**：无法同时访问以太网和串口设备
+
+---
+
+#### 方式 2：现在（多数据链路层 - BIP + MS/TP）
+
+```cpp
+/**
+ * @brief 初始化所有配置的数据链路层
+ * 
+ * 架构特点：
+ * - 显式初始化：每个数据链路层单独配置和初始化
+ * - 并行运行：多个数据链路层同时工作，互不干扰
+ * - 优雅降级：某个数据链路层初始化失败不影响其他数据链路层
+ * - 配置驱动：根据 config.yaml 决定启用哪些数据链路层
+ */
+proto_status_t initialize_all_datalinks(BacnetContext *context) {
+    log_info("[BACnet][DataLink] Initializing multiple datalink layers...");
+
+#if defined(BACDL_MULTIPLE)
+    /* ========================================================================
+     * 步骤 1：初始化 BACnet/IP 数据链路层（以太网 UDP）
+     * ======================================================================== */
+    
+    log_info("[BACnet][DataLink] [1/2] Initializing BACnet/IP (Ethernet)...");
+    
+    // 1.1 设置 UDP 端口
+    bip_set_port(context->config.port);  // 默认 47808
+    log_debug("[BACnet][DataLink][BIP] Port set to {}", context->config.port);
+    
+    // 1.2 初始化 BACnet/IP 数据链路层
+    //     参数：interface_name - 网络接口名称（如 "eth0"），nullptr 表示自动选择
+    const char *ifname = (context->config.interface_name[0] != '\0') 
+                          ? context->config.interface_name 
+                          : nullptr;
+    
+    if (!bip_init(const_cast<char*>(ifname))) {
+        log_error("[BACnet][DataLink][BIP] Failed to initialize BACnet/IP on interface '{}'", 
+                  ifname ? ifname : "<auto>");
+        return PROTO_ERROR_INIT;
+    }
+    
+    log_info("[BACnet][DataLink][BIP] Initialized successfully (interface: {}, port: {})",
+             ifname ? ifname : "<auto>", context->config.port);
+
+    /* ========================================================================
+     * 步骤 2：初始化 MS/TP 数据链路层（RS-485 串口）
+     * ======================================================================== */
+    
+    // ⚠️ 检查 BACnet 库是否编译了 MS/TP 支持
+    // 注意：即使定义了 BACDL_MULTIPLE，也需要 BACnet 库编译时启用 BACDL_MSTP
+#if defined(BACDL_MSTP)
+    // 检查是否配置了 MS/TP 串口路径
+    if (context->config.mstp_port[0] != '\0') {
+        log_info("[BACnet][DataLink] [2/2] Initializing MS/TP (RS-485 Serial)...");
+        
+        // 2.1 设置波特率（常用值：9600, 19200, 38400, 76800）
+        dlmstp_set_baud_rate(context->config.mstp_baud);
+        log_debug("[BACnet][DataLink][MSTP] Baud rate set to {} bps", context->config.mstp_baud);
+        
+        // 2.2 设置 MAC 地址（0-127，唯一标识本设备）
+        dlmstp_set_mac_address(context->config.mstp_mac);
+        log_debug("[BACnet][DataLink][MSTP] MAC address set to {}", context->config.mstp_mac);
+        
+        // 2.3 设置最大主站地址（默认 127）
+        dlmstp_set_max_master(context->config.mstp_max_master);
+        log_debug("[BACnet][DataLink][MSTP] Max master set to {}", context->config.mstp_max_master);
+        
+        // 2.4 设置最大信息帧数（默认 1，决定单次令牌持有可发送的帧数）
+        dlmstp_set_max_info_frames(context->config.mstp_max_frames);
+        log_debug("[BACnet][DataLink][MSTP] Max info frames set to {}", context->config.mstp_max_frames);
+        
+        // 2.5 初始化 MS/TP 数据链路层
+        //     参数：port - 串口设备路径（如 "/dev/ttyUSB0", "/dev/ttyS1"）
+        if (!dlmstp_init(const_cast<char*>(context->config.mstp_port))) {
+            log_error("[BACnet][DataLink][MSTP] Failed to initialize MS/TP on port '{}'", 
+                      context->config.mstp_port);
+            // ⭐ MS/TP 初始化失败不影响 BACnet/IP，继续运行（优雅降级）
+            log_warn("[BACnet][DataLink][MSTP] Continuing with BACnet/IP only");
+        } else {
+            log_info("[BACnet][DataLink][MSTP] Initialized successfully (port: {}, baud: {}, MAC: {})",
+                     context->config.mstp_port, context->config.mstp_baud, context->config.mstp_mac);
+        }
+    } else {
+        log_info("[BACnet][DataLink] [2/2] MS/TP not configured, skipping");
+        log_debug("[BACnet][DataLink][MSTP] Hint: Set 'mstp.port' in config.yaml to enable");
+    }
+#else
+    // BACnet 库未编译 MS/TP 支持
+    if (context->config.mstp_port[0] != '\0') {
+        log_warn("[BACnet][DataLink] MS/TP configured but library not compiled with BACDL_MSTP");
+        log_warn("[BACnet][DataLink] Hint: Rebuild BACnet library with MS/TP support");
+    }
+    log_info("[BACnet][DataLink] [2/2] MS/TP not available (library not compiled with BACDL_MSTP)");
+#endif  // BACDL_MSTP
+
+    /* ========================================================================
+     * 步骤 3：数据链路层初始化完成
+     * ======================================================================== */
+    
+    log_info("[BACnet][DataLink] All datalink layers initialized successfully");
+    log_info("[BACnet][DataLink] Protocol stack will auto-route requests based on device address table");
+    log_info("[BACnet][DataLink] Optional: Use 'datalink_hint' field to force specific datalink");
+    
+    return PROTO_SUCCESS;
+#else
+    // 未启用 BACDL_MULTIPLE，回退到单一数据链路层模式
+    log_warn("[BACnet][DataLink] BACDL_MULTIPLE not defined, using single datalink mode");
+    return PROTO_SUCCESS;
+#endif  // BACDL_MULTIPLE
+}
+
+/**
+ * @brief 初始化 BACnet 上下文（包含多数据链路层初始化）
+ */
+proto_status_t initialize_context(BacnetContext *context) {
+    // 协议栈基础初始化
+    Device_Init(nullptr);
+    address_init();
+    dlenv_init();  // 加载环境变量配置
+    
+    // ⭐ 新增：显式初始化所有配置的数据链路层
+    proto_status_t dl_status = initialize_all_datalinks(context);
+    if (dl_status != PROTO_SUCCESS) {
+        log_error("[BACnet] Failed to initialize datalink layers: {}", dl_status);
+        return dl_status;
+    }
+    
+    // 注册回调
+    register_bacnet_handlers(context);
+    return PROTO_SUCCESS;
+}
+```
+
+**特点**：
+- ✅ **多物理层**：BACnet/IP + MS/TP 同时运行，支持跨网通信
+- ✅ **显式初始化**：每个数据链路层单独配置，逻辑清晰
+- ✅ **可选启用**：MS/TP 串口路径为空则不启用，灵活配置
+- ✅ **优雅降级**：MS/TP 初始化失败不影响 BACnet/IP，系统继续运行
+- ✅ **条件编译**：通过 `BACDL_MSTP` 宏保证编译时安全
+
+**对比表格**：
+
+| 特性 | 单数据链路层（旧） | 多数据链路层（新） |
+|------|-------------------|-------------------|
+| 初始化方式 | `dlenv_init()` 隐式初始化 | `initialize_all_datalinks()` 显式初始化 |
+| 支持的物理层 | 仅 BACnet/IP | BACnet/IP + MS/TP 并行 |
+| 配置方式 | 环境变量或编译宏 | `config.yaml` 配置文件 |
+| 复杂度 | 简单（1 行代码） | 适中（150 行代码，含注释） |
+| 灵活性 | 低（单一网络） | 高（跨网融合） |
+| 错误处理 | 初始化失败直接返回 | 优雅降级（部分失败继续运行） |
+| 适用场景 | 单一以太网环境 | 楼宇自动化多网融合 |
+
+---
+
+### 📝 使用示例
+
+#### 示例 1：自动路由（推荐）
+
+```c
+#include "proto_bacnet.h"
+#include <bacnet/bacenum.h>  // BACnet 枚举定义
+
+int main(void) {
+    // ⭐ 零配置：无需初始化，首次读写时自动初始化
+    
+    /* ------------------------------------------------------------------
+     * 场景 1：读取以太网温度传感器（设备 5678）
+     * ------------------------------------------------------------------ */
+    bacnet_data_value_t temp_value = {BACNET_DATA_NULL, {0}};
+    bacnet_read_t temp_req = BACNET_READ_INIT(
+        5678,                       // 设备实例 ID
+        OBJECT_ANALOG_INPUT,        // 对象类型：模拟输入
+        0,                          // 对象实例
+        PROP_PRESENT_VALUE,         // 属性：当前值
+        &temp_value                 // 输出缓冲区
+    );
+    // ⭐ datalink_hint 默认为 AUTO，协议栈自动路由
+    
+    int ret = plc_proto_read(&temp_req);
+    if (ret == PROTO_SUCCESS && temp_value.type == BACNET_DATA_REAL) {
+        printf("温度: %.2f °C\n", temp_value.value.real_value);
+    }
+    
+    /* ------------------------------------------------------------------
+     * 场景 2：控制串口空调设备（设备 1234）
+     * ------------------------------------------------------------------ */
+    bacnet_data_value_t target_temp = {
+        .type = BACNET_DATA_REAL,
+        .value = {.real_value = 24.0f}  // 设置目标温度 24°C
+    };
+    
+    bacnet_write_t ac_req = BACNET_WRITE_INIT(
+        1234,                       // 设备实例 ID
+        OBJECT_ANALOG_OUTPUT,       // 对象类型：模拟输出
+        0,                          // 对象实例
+        PROP_PRESENT_VALUE,         // 属性：当前值
+        target_temp                 // 写入值
+    );
+    // ⭐ datalink_hint 默认为 AUTO，协议栈自动路由到串口
+    
+    ret = plc_proto_write(&ac_req);
+    if (ret == PROTO_SUCCESS) {
+        printf("目标温度已设置为 24.0 °C\n");
+    }
+    
+    // ⭐ 零配置：程序退出时自动清理（atexit）
+    return 0;
+}
+```
+
+#### 示例 2：显式指定数据链路层（可选）
+
+```c
+#include "proto_bacnet.h"
+#include <bacnet/bacenum.h>
+
+int main(void) {
+    /* ------------------------------------------------------------------
+     * 场景 1：强制走以太网 BACnet/IP
+     * 用途：已知设备在以太网，跳过路由查询以提升性能
+     * ------------------------------------------------------------------ */
+    bacnet_data_value_t temp_value = {BACNET_DATA_NULL, {0}};
+    bacnet_read_t temp_req = BACNET_READ_INIT(
+        5678, OBJECT_ANALOG_INPUT, 0, PROP_PRESENT_VALUE, &temp_value
+    );
+    
+    // ⭐ 显式指定：强制使用 BACnet/IP（以太网）
+    temp_req.datalink_hint = BACNET_DATALINK_BIP;
+    
+    plc_proto_read(&temp_req);
+    
+    /* ------------------------------------------------------------------
+     * 场景 2：强制走串口 MS/TP
+     * 用途：已知设备在串口，跳过路由查询
+     * ------------------------------------------------------------------ */
+    bacnet_data_value_t target_temp = {
+        .type = BACNET_DATA_REAL,
+        .value = {.real_value = 22.0f}
+    };
+    
+    bacnet_write_t ac_req = BACNET_WRITE_INIT(
+        1234, OBJECT_ANALOG_OUTPUT, 0, PROP_PRESENT_VALUE, target_temp
+    );
+    
+    // ⭐ 显式指定：强制使用 MS/TP（串口）
+    ac_req.datalink_hint = BACNET_DATALINK_MSTP;
+    
+    plc_proto_write(&ac_req);
+    
+    return 0;
+}
+```
+
+**完整示例程序**：
+- 源文件：`demo/multi_datalink_example.cc`
+- 编译命令：`make multi_datalink_example`
+- 运行命令：`./multi_datalink_example`
+
+---
+
+### 🧪 测试与验证
+
+#### 1. 编译测试
+
+```bash
+cd /path/to/procto-manager-hd/impl/bacnet/build
+make clean
+make -j$(nproc)
+
+# 检查编译产物
+ls -lh libproto_bacnet.so
+ls -lh multi_datalink_example
+```
+
+#### 2. 运行时验证（无真实设备）
+
+```bash
+# 运行示例程序
+./multi_datalink_example
+
+# 期望日志输出（BACnet/IP + MS/TP 初始化成功）
+# [BACnet][DataLink] Initializing multiple datalink layers...
+# [BACnet][DataLink] [1/2] Initializing BACnet/IP (Ethernet)...
+# [BACnet][DataLink][BIP] Initialized successfully (interface: <auto>, port: 47808)
+# [BACnet][DataLink] [2/2] Initializing MS/TP (RS-485 Serial)...
+# [BACnet][DataLink][MSTP] Baud rate set to 38400 bps
+# [BACnet][DataLink][MSTP] MAC address set to 1
+# [BACnet][DataLink][MSTP] Failed to initialize MS/TP on port '/dev/ttyUSB0'  # ⬅️ 设备不存在，正常
+# [BACnet][DataLink][MSTP] Continuing with BACnet/IP only
+# [BACnet][DataLink] All datalink layers initialized successfully
+```
+
+#### 3. 配置验证
+
+查看配置加载日志：
+
+```
+┃ [MS/TP] (RS-485 Serial)                                      ┃
+┃   port               : /dev/ttyUSB0          [YAML   ] ┃  ✅ 从 YAML 读取
+┃   baud_rate          :                38400  [YAML   ] ┃  ✅ 从 YAML 读取
+┃   mac_address        :                    1  [YAML   ] ┃  ✅ 从 YAML 读取
+┃   max_master         :                  127  [YAML   ] ┃  ✅ 从 YAML 读取
+┃   max_info_frames    :                    1  [YAML   ] ┃  ✅ 从 YAML 读取
+```
+
+#### 4. 真实设备测试（可选）
+
+```bash
+# 1. 连接 RS-485 USB 转换器到 /dev/ttyUSB0
+# 2. 连接 MS/TP 设备（如 VAV 控制器）
+# 3. 修改 config.yaml 中的 discovery.target_device_start/end 为真实设备 ID
+# 4. 运行程序
+
+./multi_datalink_example
+
+# 期望日志输出（成功发现设备）
+# [BACnet] Device discovery success for range 1000-2000
+# [BACnet] Found device 1234 at MSTP MAC 5
+# [BACnet] Found device 5678 at IP 192.168.1.100
+```
+
+---
+
+### 🐛 故障排查
+
+#### 问题 1：MS/TP 初始化失败
+
+**日志**：
+```
+[BACnet][DataLink][MSTP] Failed to initialize MS/TP on port '/dev/ttyUSB0'
+/dev/ttyUSB0: No such file or directory
+```
+
+**原因**：串口设备不存在或无权限访问
+
+**解决方案**：
+```bash
+# 1. 检查串口设备是否存在
+ls -l /dev/ttyUSB*
+
+# 2. 添加用户到 dialout 组（获取串口权限）
+sudo usermod -a -G dialout $USER
+# 重新登录生效
+
+# 3. 检查设备权限
+sudo chmod 666 /dev/ttyUSB0  # 临时方案
+
+# 4. 如果设备不存在，安装 USB 转串口驱动
+sudo modprobe ftdi_sio
+sudo modprobe cp210x
+```
+
+---
+
+#### 问题 2：链接错误（undefined reference to dlmstp_*）
+
+**日志**：
+```
+/usr/bin/ld: libproto_bacnet.so: undefined reference to `dlmstp_init'
+/usr/bin/ld: libproto_bacnet.so: undefined reference to `dlmstp_set_baud_rate'
+```
+
+**原因**：BACnet 库未编译 MS/TP 支持
+
+**解决方案**：
+```bash
+# 1. 检查库是否包含 MS/TP 符号
+nm depend/lib/libbacnet-stack.a | grep dlmstp
+
+# 2. 如果无输出，重新编译 BACnet 库
+cd path/to/bacnet-stack
+export CFLAGS="-DBACDL_ALL=1"
+make clean && make
+
+# 3. 替换项目中的库文件
+cp lib/libbacnet.a /path/to/procto-manager-hd/impl/bacnet/depend/lib/libbacnet-stack.a
+
+# 4. 重新编译项目
+cd /path/to/procto-manager-hd/impl/bacnet/build
+make clean && make
+```
+
+---
+
+#### 问题 3：配置未生效（显示 [DEFAULT] 而不是 [YAML]）
+
+**日志**：
+```
+┃   read_timeout_ms    :                 6000  [DEFAULT] ┃  ❌ 应该是 [YAML]
+```
+
+**原因**：YAML 解析器未正确切换 section
+
+**解决方案**：
+已在 `proto_bacnet_utils.cc` 中修复（允许在 Bacnet 子 section 之间自由切换），确保使用最新代码。
+
+---
+
+### 📚 技术要点总结
+
+#### 1. 核心实现要点
+
+| 要点 | 说明 |
+|------|------|
+| **条件编译** | 使用 `#if defined(BACDL_MSTP)` 确保只在库支持时调用 MS/TP API |
+| **优雅降级** | MS/TP 初始化失败不影响 BACnet/IP，系统继续以单网模式运行 |
+| **配置驱动** | 通过 `config.yaml` 的 `mstp.port` 决定是否启用 MS/TP |
+| **自动路由** | 协议栈维护设备地址路由表，根据 Who-Is 发现结果自动选择数据链路层 |
+| **显式指定** | 可选通过 `datalink_hint` 字段强制指定数据链路层，跳过路由查询 |
+
+#### 2. 关键 API
+
+**BACnet/IP 专用 API**：
+```c
+void bip_set_port(uint16_t port);           // 设置 UDP 端口（默认 47808）
+bool bip_init(char *ifname);                 // 初始化 BACnet/IP（参数：网络接口名）
+```
+
+**MS/TP 专用 API**：
+```c
+void dlmstp_set_baud_rate(uint32_t baud);    // 设置波特率（如 38400）
+void dlmstp_set_mac_address(uint8_t mac);    // 设置 MAC 地址（0-127）
+void dlmstp_set_max_master(uint8_t max);     // 设置最大主站地址（默认 127）
+void dlmstp_set_max_info_frames(uint8_t n);  // 设置最大信息帧数（默认 1）
+bool dlmstp_init(char *port);                // 初始化 MS/TP（参数：串口路径）
+```
+
+#### 3. 设计模式
+
+- **策略模式**：数据链路层作为可插拔策略，运行时动态选择
+- **工厂模式**：`initialize_all_datalinks()` 根据配置创建不同的数据链路层实例
+- **责任链模式**：协议栈按优先级尝试不同的数据链路层，直到成功发送
+- **适配器模式**：统一的 `plc_proto_read/write` API 适配不同的数据链路层实现
+
+#### 4. 性能考量
+
+| 场景 | 性能影响 | 优化建议 |
+|------|---------|---------|
+| 自动路由 | 首次访问需查询路由表（~1ms） | 缓存设备地址，后续访问无开销 |
+| 显式指定 | 无路由查询，性能最佳 | 已知设备物理层时推荐使用 |
+| MS/TP 通信 | 串口波特率限制（38400 bps ≈ 3.8 KB/s） | 大数据量传输优先使用 BACnet/IP |
+| BACnet/IP 通信 | 以太网带宽充足（100 Mbps+） | 适合大数据量和实时性要求高的场景 |
+
+---
+
+### 🎓 最佳实践
+
+#### 1. 配置建议
+
+```yaml
+# ✅ 推荐配置
+protocols:
+  bacnet:
+    network:
+      interface: "eth0"        # 明确指定网络接口，避免自动选择错误
+      port: 47808
+    
+    mstp:
+      port: "/dev/ttyUSB0"     # 使用稳定的设备路径（避免 /dev/ttyUSB0 → ttyUSB1 的问题）
+      baud_rate: 38400         # 常用波特率，兼容大部分设备
+      mac_address: 1           # 确保网络内唯一
+      max_master: 127
+      max_info_frames: 1       # 保守值，兼容性最好
+
+# ❌ 不推荐配置
+protocols:
+  bacnet:
+    mstp:
+      port: "/dev/ttyUSB0"
+      baud_rate: 115200        # ❌ 非标准波特率，部分设备不支持
+      mac_address: 255         # ❌ 超出范围（0-127）
+```
+
+#### 2. 编程建议
+
+```c
+// ✅ 推荐：使用自动路由（简洁、灵活）
+bacnet_read_t req = BACNET_READ_INIT(device_id, obj_type, obj_inst, prop, &value);
+plc_proto_read(&req);  // datalink_hint 默认为 AUTO
+
+// ✅ 可选：显式指定（性能优化）
+req.datalink_hint = BACNET_DATALINK_MSTP;  // 已知设备在串口
+plc_proto_read(&req);
+
+// ❌ 不推荐：手动管理数据链路层（破坏封装）
+// 不要直接调用 bip_init() 或 dlmstp_init()，让驱动自动管理
+```
+
+#### 3. 错误处理
+
+```c
+int ret = plc_proto_read(&req);
+switch (ret) {
+    case PROTO_SUCCESS:
+        // 读取成功
+        break;
+    
+    case PROTO_ERROR_CONNECT:
+        // 连接失败：设备可能不在线或网络问题
+        // 建议：检查设备电源、网络连接、串口线缆
+        break;
+    
+    case PROTO_ERROR_TIMEOUT:
+        // 超时：设备响应慢或网络拥塞
+        // 建议：增加 read_timeout_ms 配置值
+        break;
+    
+    case PROTO_ERROR_INIT:
+        // 初始化失败：数据链路层未就绪
+        // 建议：检查配置文件、串口设备权限
+        break;
+    
+    default:
+        log_error("Unexpected error: {}", ret);
+        break;
+}
+```
+
+#### 4. 调试技巧
+
+```bash
+# 1. 启用调试日志
+export BACNET_LOG_LEVEL=debug
+./your_program
+
+# 2. 抓包分析（BACnet/IP）
+sudo tcpdump -i eth0 -w bacnet.pcap udp port 47808
+# 用 Wireshark 打开 bacnet.pcap 分析
+
+# 3. 监控串口通信（MS/TP）
+sudo cat /dev/ttyUSB0  # 查看原始数据
+sudo minicom -D /dev/ttyUSB0  # 串口终端
+
+# 4. 查看设备发现日志
+grep "Device discovery" /var/log/bacnet.log
+grep "I-Am" /var/log/bacnet.log
+```
+
+---
+
+### 📖 相关文档
+
+- **示例程序**：`demo/multi_datalink_example.cc` - 完整的多数据链路层使用示例
+- **配置文件**：`config.yaml` - MS/TP 配置模板
+- **架构文档**：`ARCHITECTURE.md` - BACnet 驱动架构设计
+- **BACnet 标准**：ASHRAE 135-2020 - Clause 9（MS/TP 规范）
+
+---
+
+### 🔄 版本历史
+
+| 版本 | 日期 | 更新内容 |
+|------|------|---------|
+| v5.0 | 2025-11-18 | ✨ 新增多数据链路层支持（BIP + MS/TP） |
+| v4.0 | 2025-10-15 | 重构为零配置架构，自动初始化和清理 |
+| v3.0 | 2025-09-01 | 新增热配置监控功能 |
+| v2.0 | 2025-07-20 | 新增读写缓存机制 |
+| v1.0 | 2025-06-01 | 初始版本，仅支持 BACnet/IP |
+
+---
+
+```cpp
+proto_status_t initialize_context(BacnetContext *context) {
+    Device_Init(nullptr);
+    address_init();
+    dlenv_init();  // ⭐ 自动初始化 BACnet/IP
+    register_bacnet_handlers(context);
+}
+```
+
+**特点**：
+- ✅ 简单：只需 `dlenv_init()`
+- ❌ 单一：只能一种数据链路层
+
+#### 现在（多数据链路层）
+
+```cpp
+proto_status_t initialize_context(BacnetContext *context) {
+    Device_Init(nullptr);
+    address_init();
+    dlenv_init();
+    
+    // ⭐ 显式初始化所有配置的数据链路层
+    initialize_all_datalinks(context);
+    
+    register_bacnet_handlers(context);
+}
+
+proto_status_t initialize_all_datalinks(BacnetContext *context) {
+    // 1. 初始化 BACnet/IP
+    bip_set_port(context->config.port);
+    bip_init(context->config.interface_name);
+    
+    // 2. 初始化 MS/TP（如果配置了）
+    if (context->config.mstp_port[0] != '\0') {
+        dlmstp_set_baud_rate(context->config.mstp_baud);
+        dlmstp_set_mac_address(context->config.mstp_mac);
+        dlmstp_init(context->config.mstp_port);
+    }
+    
+    return PROTO_SUCCESS;
+}
+```
+
+**特点**：
+- ✅ 多物理层：BACnet/IP + MS/TP 同时运行
+- ✅ 显式初始化：每个数据链路层单独配置
+- ✅ 可选启用：MS/TP 串口路径为空则不启用
+
+### 📝 使用示例
+
+```c
+// 自动路由（推荐）
+bacnet_read_t req = BACNET_READ_INIT(5678, AI, 0, PV, &value);
+plc_proto_read(&req);  // 协议栈自动选择数据链路层
+
+// 显式指定（可选）
+req.datalink_hint = BACNET_DATALINK_MSTP;  // 强制走串口
+plc_proto_read(&req);
+```
+
+### 🧪 验证
+
+```bash
+# 运行示例
+./multi_datalink_example
+
+# 查看日志
+[BACnet][DataLink] [1/2] Initializing BACnet/IP...
+[BACnet][DataLink][BIP] Initialized (interface: eth0, port: 47808)
+[BACnet][DataLink] [2/2] Initializing MS/TP...
+[BACnet][DataLink][MSTP] Initialized (port: /dev/ttyUSB0, baud: 38400)
+```
+
+详细文档：`impl/bacnet/MULTI_DATALINK_SUPPORT.md`
+
+---
+
 ###  常见日志解读
 
 ```

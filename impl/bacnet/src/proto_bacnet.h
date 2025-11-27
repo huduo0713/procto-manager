@@ -43,9 +43,16 @@ typedef struct {
     uint16_t local_max_apdu;                /* 本地最大 APDU 长度 (默认: 1476) */
     
     /* ==================== 网络层配置 ==================== */
-    char     interface_name[BACNET_MAX_INTERFACE_LEN];  /* 网络接口名称 (默认: ""=自动) */
-    uint16_t port;                          /* UDP 端口 (默认: 47808) */
-    char     broadcast_address[BACNET_MAX_ADDRESS_LEN]; /* 广播地址 (默认: "255.255.255.255") */
+    char     interface_name[BACNET_MAX_INTERFACE_LEN];  /* 网络接口名称 (BACnet/IP，默认: ""=自动) */
+    uint16_t port;                          /* UDP 端口 (BACnet/IP，默认: 47808) */
+    char     broadcast_address[BACNET_MAX_ADDRESS_LEN]; /* 广播地址 (BACnet/IP，默认: "255.255.255.255") */
+    
+    /* ==================== MS/TP 配置（仅在 BACDL_MSTP 编译时使用） ==================== */
+    char     mstp_port[BACNET_MAX_INTERFACE_LEN];  /* 串口设备路径 (MS/TP，默认: "/dev/ttyUSB0") */
+    uint32_t mstp_baud;                     /* 波特率 (MS/TP，默认: 38400, 可选: 9600/19200/38400/76800) */
+    uint8_t  mstp_mac;                      /* MAC 地址 (MS/TP，默认: 1, 范围: 0-127) */
+    uint8_t  mstp_max_master;               /* 最大主站地址 (MS/TP，默认: 127) */
+    uint8_t  mstp_max_frames;               /* 最大信息帧数 (MS/TP，默认: 1) */
     
     /* ==================== 服务行为配置 ==================== */
     uint32_t read_timeout_ms;               /* ReadProperty 超时 (毫秒，默认: 6000) */
@@ -91,9 +98,36 @@ typedef struct {
 #define BACNET_CONFIG_INIT { \
     0, 0, 0, 0, \
     0, 0, {0}, 0, {0}, \
-    0, 0, 0, 0, 0, \
-    0, 0, 0, -1, 0 \
+    {0}, 0, 0, 0, 0, \
+    0, 0, 0, 0, 0, 0, \
+    0, 0, -1, 0 \
 }
+
+/* -------------------------------------------------------------------------- */
+/* 数据链路层类型                                                             */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * @brief BACnet 数据链路层类型枚举
+ * 
+ * 用于多数据链路层场景（BACDL_MULTIPLE），指定设备使用的物理层传输方式。
+ * 
+ * 使用说明：
+ * - BACNET_DATALINK_AUTO（默认）：自动路由，协议栈根据设备地址表选择
+ * - 其他值：强制使用指定的数据链路层
+ * 
+ * 示例：
+ *   bacnet_read_t req = BACNET_READ_INIT(...);
+ *   req.datalink_hint = BACNET_DATALINK_MSTP;  // 强制走串口
+ *   plc_proto_read(&req);
+ */
+typedef enum {
+    BACNET_DATALINK_AUTO = 0,    /* 自动检测（默认）：协议栈根据设备地址表自动路由 */
+    BACNET_DATALINK_BIP,         /* BACnet/IP：以太网 UDP/IP 传输 */
+    BACNET_DATALINK_MSTP,        /* MS/TP：RS-485 串口主从令牌传递 */
+    BACNET_DATALINK_ETHERNET,    /* Ethernet：ISO 8802-3 以太网帧 */
+    BACNET_DATALINK_BIP6         /* BACnet/IPv6：IPv6 传输 */
+} bacnet_datalink_type_t;
 
 /* -------------------------------------------------------------------------- */
 /* 事件定义                                                                   */
@@ -142,6 +176,28 @@ typedef struct {
     int32_t             array_index;       /* 属性数组索引，-1 表示整个数组 (默认: -1) */
     uint32_t            timeout_ms;        /* 操作超时，0表示使用配置文件默认值 (默认: 0=使用配置) */
     uint8_t             invoke_id;         /* 输出：BACnet调用ID，用于匹配响应 */
+    
+    /**
+     * @brief 数据链路层类型提示（可选）
+     * 
+     * 用途：
+     * - AUTO（默认）：让 BACnet 协议栈自动路由，根据设备地址表选择数据链路层
+     * - 显式指定：强制使用特定数据链路层（适用于已知设备通信方式的场景）
+     * 
+     * 典型场景：
+     * 1. 首次访问未知设备：使用 AUTO，协议栈会在所有网络发现设备并缓存路由
+     * 2. 已知设备类型：显式指定可略微提升性能（跳过路由查询）
+     * 3. 调试特定网络：强制指定以排查网络问题
+     * 
+     * 示例：
+     *   // 自动路由（推荐）
+     *   bacnet_read_t req = BACNET_READ_INIT(5678, ...);
+     *   // req.datalink_hint = BACNET_DATALINK_AUTO;  // 默认就是 AUTO，无需设置
+     *   
+     *   // 强制走串口
+     *   req.datalink_hint = BACNET_DATALINK_MSTP;
+     */
+    bacnet_datalink_type_t datalink_hint;  /* 数据链路层提示 (默认: AUTO) */
 } bacnet_read_t;
 
 /* 便捷初始化宏：只需填写四元组 + value缓冲区 */
@@ -154,7 +210,8 @@ typedef struct {
         .value = (val_ptr), \
         .array_index = -1, \
         .timeout_ms = 0, \
-        .invoke_id = 0 \
+        .invoke_id = 0, \
+        .datalink_hint = BACNET_DATALINK_AUTO \
     }
 
 typedef struct {
@@ -169,6 +226,13 @@ typedef struct {
     uint8_t            priority;           /* 写入优先级，0 表示使用配置默认值 (默认: 0=使用配置) */
     uint32_t           timeout_ms;         /* 操作超时，0表示使用配置文件默认值 (默认: 0=使用配置) */
     uint8_t            invoke_id;          /* 输出：BACnet调用ID，用于匹配响应 */
+    
+    /**
+     * @brief 数据链路层类型提示（可选）
+     * 
+     * 功能与 bacnet_read_t.datalink_hint 相同，详见其注释。
+     */
+    bacnet_datalink_type_t datalink_hint;  /* 数据链路层提示 (默认: AUTO) */
 } bacnet_write_t;
 
 /* 便捷初始化宏：只需填写四元组 + value */
@@ -182,7 +246,8 @@ typedef struct {
         .array_index = -1, \
         .priority = 0, \
         .timeout_ms = 0, \
-        .invoke_id = 0 \
+        .invoke_id = 0, \
+        .datalink_hint = BACNET_DATALINK_AUTO \
     }
 
 /* -------------------------------------------------------------------------- */

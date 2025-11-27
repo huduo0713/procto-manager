@@ -21,6 +21,23 @@ set(ROOT_DIR ../..)
 set(BUILD_SHARED_LIBS OFF CACHE BOOL "Build shared libraries" FORCE)
 
 # ==============================================================================
+# BACnet 数据链路层配置
+# ==============================================================================
+
+# 启用多数据链路层支持（允许同时使用 BACnet/IP + MS/TP 等）
+# 说明：
+#   - BACDL_MULTIPLE=1: 启用多数据链路层模式，运行时可同时初始化多个数据链路层
+#   - 适用场景：PLC 需要同时访问以太网设备（BIP）和串口设备（MS/TP）
+#   - 协议栈会自动维护设备路由表，根据设备地址选择正确的数据链路层
+#   - 用户可选在 bacnet_read_t/bacnet_write_t 中指定 datalink_hint 强制路由
+#   
+#   ⚠️ 重要：BACnet 库编译要求
+#   - BACnet/IP 支持：必定可用（BACDL_BIP）
+#   - MS/TP 支持：需要 BACnet 库编译时启用 BACDL_MSTP
+#   - 如果库未编译 MS/TP，运行时会自动跳过 MS/TP 初始化（优雅降级）
+add_definitions(-DBACDL_MULTIPLE=1 -DBACDL_ALL=1 )
+
+# ==============================================================================
 # 包含公共配置文件
 # ==============================================================================
 
@@ -28,7 +45,8 @@ set(BUILD_SHARED_LIBS OFF CACHE BOOL "Build shared libraries" FORCE)
 include(${ROOT_DIR}/cmake/compile_options.cmake)
 
 # 协议栈编译配置（源文件扫描、库依赖等）
-set(PROTOCOL_LIBS bacnet yaml)
+# 注意：使用 bacnet-stack 而不是 bacnet，因为新编译的库文件名为 libbacnet-stack.a
+set(PROTOCOL_LIBS bacnet-stack yaml)
 include(${ROOT_DIR}/cmake/protocol.cmake)
 
 # 应用程序编译配置
@@ -79,6 +97,12 @@ add_bacnet_executable(bacnet_demo demo/main.cc)
 #    链接：动态库 libproto_bacnet.so
 add_bacnet_executable(concurrent_test demo/concurrent_test.cc)
 
+# 允许程序在运行时查找同目录下的 .so 库
+set_target_properties(concurrent_test PROPERTIES
+    BUILD_WITH_INSTALL_RPATH TRUE
+    INSTALL_RPATH "$ORIGIN"
+)
+
 # ------------------------------------------------------------------------------
 # 3. 热配置测试程序
 #    文件：demo/hot_config_test.c
@@ -87,6 +111,12 @@ add_bacnet_executable(concurrent_test demo/concurrent_test.cc)
 #    注意：虽然是 .c 文件，但因为包含了 C++ 头文件，需要用 C++ 编译器编译
 # ------------------------------------------------------------------------------
 add_bacnet_executable(hot_config_test demo/hot_config_test.cc)
+
+# 允许程序在运行时查找同目录下的 .so 库
+set_target_properties(hot_config_test PROPERTIES
+    BUILD_WITH_INSTALL_RPATH TRUE
+    INSTALL_RPATH "$ORIGIN"
+)
 
 # 强制用 C++ 编译器编译（因为包含了 one_logger.hpp 等 C++ 头文件）
 set_source_files_properties(demo/hot_config_test.cc PROPERTIES LANGUAGE CXX)
@@ -98,6 +128,30 @@ set_source_files_properties(demo/hot_config_test.cc PROPERTIES LANGUAGE CXX)
 #    用法：运行程序，观察配置文件的修改
 # ------------------------------------------------------------------------------
 add_bacnet_executable(config_update_test demo/config_update_test.cc)
+
+# 允许程序在运行时查找同目录下的 .so 库
+set_target_properties(config_update_test PROPERTIES
+    BUILD_WITH_INSTALL_RPATH TRUE
+    INSTALL_RPATH "$ORIGIN"
+)
+
+# ------------------------------------------------------------------------------
+# 5. 多数据链路层使用示例
+#    文件：demo/multi_datalink_example.cc
+#    功能：演示如何在一个 PLC 中同时使用 BACnet/IP（以太网）和 MS/TP（串口）
+#    用法：配置好 config.yaml 的 network 和 mstp section 后运行
+#    说明：
+#      - 演示自动路由和显式指定数据链路层两种方式
+#      - 适用场景：同时访问以太网设备和串口设备
+#      - 需要在 config.yaml 中配置 mstp.port（如 "/dev/ttyUSB0"）
+# ------------------------------------------------------------------------------
+add_bacnet_executable(multi_datalink_example demo/multi_datalink_example.cc)
+
+# 允许程序在运行时查找同目录下的 .so 库
+set_target_properties(multi_datalink_example PROPERTIES
+    BUILD_WITH_INSTALL_RPATH TRUE
+    INSTALL_RPATH "$ORIGIN"
+)
 
 # ==============================================================================
 # 构建总结信息
@@ -115,10 +169,11 @@ message(STATUS "Build Shared Libs     : ${BUILD_SHARED_LIBS}")
 message(STATUS "Protocol Libraries    : ${PROTOCOL_LIBS}")
 message(STATUS "--------------------------------------------------------------")
 message(STATUS "Executables to build:")
-message(STATUS "  - bacnet_demo       : Basic BACnet demo")
-message(STATUS "  - concurrent_test   : Concurrent read/write test")
-message(STATUS "  - hot_config_test   : Hot config reload test")
-message(STATUS "  - config_update_test: Config update API test")
+message(STATUS "  - bacnet_demo           : Basic BACnet demo")
+message(STATUS "  - concurrent_test       : Concurrent read/write test")
+message(STATUS "  - hot_config_test       : Hot config reload test")
+message(STATUS "  - config_update_test    : Config update API test")
+message(STATUS "  - multi_datalink_example: Multiple datalink demo (BIP + MS/TP)")
 message(STATUS "==============================================================")
 
 # ==============================================================================

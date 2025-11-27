@@ -39,6 +39,14 @@ extern "C" {
 #include "bacnet/datalink/bip.h"
 #include "bacnet/datalink/datalink.h"
 #include "bacnet/datalink/dlenv.h"
+
+/* 多数据链路层支持 */
+#if defined(BACDL_MULTIPLE)
+    /* ⭐ MS/TP 支持需要 BACnet 库编译时启用 BACDL_MSTP */
+    #if defined(BACDL_MSTP)
+        #include "bacnet/datalink/dlmstp.h"
+    #endif
+#endif
 }
 
 /* -------------------------------------------------------------------------- */
@@ -156,7 +164,8 @@ namespace defaults {
 /* ========================================================================== */
 /* System 系统配置                                                            */
 /* ========================================================================== */
-inline constexpr const char* kConfigPath = "/usr/runtime/protocol/bacnet/config.yaml"; // 配置文件路径
+// inline constexpr const char* kConfigPath = "/usr/runtime/protocol/bacnet/config.yaml"; // 配置文件路径
+inline constexpr const char* kConfigPath = "../config.yaml";
 
 /* ========================================================================== */
 /* Discovery 设备发现配置默认值                                               */
@@ -177,6 +186,15 @@ inline constexpr uint16_t kMaxApdu = 1476;                  // 最大APDU长度(
 /* ========================================================================== */
 inline constexpr uint16_t kPort = 47808;                    // BACnet/IP UDP端口(标准端口)
 inline constexpr const char* kBroadcastAddress = "255.255.255.255";  // 广播地址
+
+/* ========================================================================== */
+/* MS/TP 串口数据链路层配置默认值                                             */
+/* ========================================================================== */
+inline constexpr const char* kMstpPort = "";                // MS/TP 串口路径（空表示不启用）
+inline constexpr uint32_t kMstpBaudRate = 38400;           // 波特率（常用值）
+inline constexpr uint8_t kMstpMacAddress = 1;              // MAC 地址（0-127）
+inline constexpr uint8_t kMstpMaxMaster = 127;             // 最大主站地址
+inline constexpr uint8_t kMstpMaxInfoFrames = 1;           // 单次令牌持有最大帧数
 
 /* ========================================================================== */
 /* Services 服务行为配置默认值                                                */
@@ -234,6 +252,13 @@ struct ConfigMetadata {
     ConfigSource interface_name{ConfigSource::Default};
     ConfigSource port{ConfigSource::Default};
     ConfigSource broadcast_address{ConfigSource::Default};
+    
+    // MS/TP (串口数据链路层)
+    ConfigSource mstp_port{ConfigSource::Default};
+    ConfigSource mstp_baud{ConfigSource::Default};
+    ConfigSource mstp_mac{ConfigSource::Default};
+    ConfigSource mstp_max_master{ConfigSource::Default};
+    ConfigSource mstp_max_frames{ConfigSource::Default};
     
     // Services
     ConfigSource read_timeout_ms{ConfigSource::Default};
@@ -545,6 +570,7 @@ private:
 /* -------------------------------------------------------------------------- */
 
 proto_status_t initialize_context(BacnetContext *context);
+proto_status_t initialize_all_datalinks(BacnetContext *context);
 void cleanup_context(BacnetContext *context);
 proto_status_t connect_device(BacnetContext *context);
 void disconnect_device(BacnetContext *context);

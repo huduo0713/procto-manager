@@ -7,7 +7,7 @@
 #include <unistd.h>
 #include <time.h>
 
-#define device_id 1392827
+#define device_id 5678
 
 // 测试并发读取多个对象
 void test_concurrent_reads() {
@@ -42,7 +42,7 @@ void test_concurrent_reads() {
             device_id,                      // 设备实例
             objects[i].object_type,    // 对象类型
             objects[i].object_instance,// 对象实例
-            PROP_PRESENT_VALUE,        // 属性ID
+            PROP_OBJECT_NAME,        // 属性ID
             &values[i]                 // value缓冲区
         );
 
@@ -71,7 +71,7 @@ void test_concurrent_reads() {
             device_id,
             objects[i].object_type,
             objects[i].object_instance,
-            PROP_PRESENT_VALUE,
+            PROP_OBJECT_NAME,
             &values[i]
         );
 
@@ -134,14 +134,16 @@ void test_repeated_reads() {
         bacnet_read_t read_req = BACNET_READ_INIT(
             device_id,
             OBJECT_ANALOG_INPUT,
-            0,
-            PROP_PRESENT_VALUE,
+            1,
+            PROP_OBJECT_NAME,
             &value
         );
 
         int result = plc_proto_read(&read_req);
         if (result == PROTO_SUCCESS) {
-            log_info("  ✅ 成功: {:.2f} (来自缓存)", value.value.real_value);
+            // log_info("  ✅ 成功: {:.2f} (来自缓存)", value.value.real_value);
+            log_info("✅ object_name = '{}'",
+                           std::string((char*)value.value.character_string.data, value.value.character_string.length));
         } else if (result == PROTO_NO_DATA) {
             log_info("  📤 请求已发送，等待响应...");
             // 等待3.5秒让慢速设备响应到达
@@ -288,10 +290,10 @@ int main() {
     test_repeated_reads();
 
     // 测试3: 并发写入
-    test_concurrent_writes();
+    // test_concurrent_writes();
 
     // 测试4: PLC高频轮询
-    test_plc_polling();
+    // test_plc_polling();
 
     log_info("");
     log_info("🎉 所有测试完成！");
