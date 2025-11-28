@@ -153,6 +153,26 @@ set_target_properties(multi_datalink_example PROPERTIES
     INSTALL_RPATH "$ORIGIN"
 )
 
+# ------------------------------------------------------------------------------
+# 6. 批量读取对象属性测试程序
+#    文件：demo/batch_read_test.cc
+#    功能：演示使用 plc_proto_read_object_properties() 批量读取对象多个属性
+#    用法：运行程序，观察批量读取 10 个常用属性的结果
+#    说明：
+#      - 利用激进缓存策略实现并发读取，提高效率
+#      - 支持 10 个属性：Object_Identifier, Object_Name, Present_Value, 
+#        Status_Flags, Out_Of_Service, Event_State, Description, Units, 
+#        Relinquish_Default, COV_Increment
+#      - 智能处理可选属性（Units, COV_Increment 等失败不影响整体）
+# ------------------------------------------------------------------------------
+add_bacnet_executable(batch_read_test demo/batch_read_test.cc)
+
+# 允许程序在运行时查找同目录下的 .so 库
+set_target_properties(batch_read_test PROPERTIES
+    BUILD_WITH_INSTALL_RPATH TRUE
+    INSTALL_RPATH "$ORIGIN"
+)
+
 # ==============================================================================
 # 构建总结信息
 # ==============================================================================
@@ -174,6 +194,7 @@ message(STATUS "  - concurrent_test       : Concurrent read/write test")
 message(STATUS "  - hot_config_test       : Hot config reload test")
 message(STATUS "  - config_update_test    : Config update API test")
 message(STATUS "  - multi_datalink_example: Multiple datalink demo (BIP + MS/TP)")
+message(STATUS "  - batch_read_test       : Batch property read test")
 message(STATUS "==============================================================")
 
 # ==============================================================================

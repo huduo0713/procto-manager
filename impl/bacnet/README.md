@@ -806,7 +806,7 @@ BACnet 协议驱动采用现代 C++17 实现，对外提供简洁的异步 C 接
 
 ### 🌟 核心价值
 
-- **🔄 异步高效** - 非阻塞读写，事件驱动架构
+- **🔄 零配置架构** - 首次调用自动初始化，程序退出自动清理
 - **🎯 接口极简** - 只暴露 2 个核心接口函数
 - **🛡️ 线程安全** - 完善的同步机制，支持并发操作
 - **💎 现代 C++** - 智能指针、原子变量、RAII、条件变量
@@ -820,14 +820,14 @@ BACnet 协议驱动采用现代 C++17 实现，对外提供简洁的异步 C 接
 
 | 特性 | 描述 | 优势 |
 |------|------|------|
-| 🚀 **异步非阻塞** | 读写操作立即返回，通过事件获取结果 | 高并发，响应快 |
+| 🚀 **异步非阻塞 + 智能缓存** | 读写操作立即返回，结果通过哈希表缓存 | 高并发，响应快 |
 | 🎯 **接口简洁** | 只需 `plc_proto_read()` 和 `plc_proto_write()` | 易学易用 |
 | 🔒 **线程安全** | 原子变量 + 互斥锁 + 条件变量 | 并发安全 |
 | 💎 **现代 C++** | 智能指针、RAII、lambda、chrono | 代码优雅，内存安全 |
 | 📦 **模块化** | 按功能拆分文件，职责单一 | 易维护，易扩展 |
 | 🔄 **自动管理** | 自动连接、自动发现、自动重试 | 零配置使用 |
 | 🔥 **热配置** | 配置文件修改后自动生效，无需重启 ⭐ NEW | 运行时动态调整 |
-| 📊 **事件驱动** | 完整的事件队列和轮询机制 | 灵活的事件处理 |
+| 🌐 **多数据链路层** | 同时支持 BACnet/IP + BACnet/MSTP | 灵活部署 |
 | 🛡️ **死锁避免** | 延迟重载机制，监控线程不会阻塞自己 | 稳定可靠 |
 | 💾 **智能缓存** | 两种缓存策略（激进/保守），可配置过期时间 | 性能优化 |
 
@@ -1193,9 +1193,9 @@ int main() {
 │                                                                    │
 │  职责：                                                            │
 │  1. 检查连接状态（未连接则自动连接）                               │
-│  2. 调用内部 C++ 实现                                             │
-│  3. 阻塞等待操作完成                                              │
-│  4. 返回操作结果                                                  │
+│  2. 查询哈希表缓存 (object_states)                                │
+│  3. 缓存命中立即返回，未命中发送异步请求                           │
+│  4. 返回状态码 (SUCCESS/NO_DATA/ERROR)                           │
 └──────────────────────────────────────────────────────────────────┘
                              ↓
 ┌══════════════════════════════════════════════════════════════════┐
@@ -1222,10 +1222,10 @@ int main() {
 ║  │  └─────────────────────────────────────────────────────┘ │    ║
 ║  │                                                            │    ║
 ║  │  ┌─────────────────────────────────────────────────────┐ │    ║
-║  │  │ 事件队列（互斥锁 + 条件变量）                        │ │    ║
-║  │  │  - std::queue<bacnet_event_t> events                │ │    ║
-║  │  │  - std::condition_variable event_cv                 │ │    ║
-║  │  │    → 通知等待的线程                                  │ │    ║
+║  │  │ 对象状态哈希表（互斥锁保护）                         │ │    ║
+║  │  │  - std::unordered_map<ObjectKey, ObjectState>      │ │    ║
+║  │  │  - 缓存读取结果（四元组为键）                        │ │    ║
+║  │  │  - 防重复发送机制                                    │ │    ║
 ║  │  └─────────────────────────────────────────────────────┘ │    ║
 ║  │                                                            │    ║
 ║  │  ┌─────────────────────────────────────────────────────┐ │    ║
@@ -1362,26 +1362,31 @@ impl/bacnet/
    │   └── start_worker_thread()
    └── 已连接 → 继续
     ↓
-3️⃣ 执行读取操作
-   ├── 检查队列是否有数据
-   ├── 解析目标设备地址
-   ├── 设置活动操作状态
-   ├── 发送 ReadProperty 请求
-   └── 获取 invoke_id
+3️⃣ 检查哈希表缓存 (object_states)
+   ├── 构造四元组键 (device, type, instance, property)
+   ├── 查找缓存：
+   │   ├── ✅ 缓存命中且未过期 → 返回 PROTO_SUCCESS（数据已填充）
+   │   ├── ⏳ 请求进行中 (active_invoke_id 存在)
+   │   │   └── 返回 PROTO_NO_DATA（等待后重试）
+   │   └── 🆕 无缓存或已过期 → 继续发送请求
     ↓
-4️⃣ 异步等待响应
-   ├── 工作线程接收数据包
+4️⃣ 发送异步读取请求
+   ├── 调用 execute_read_property()
+   ├── 发送 ReadProperty 到 BACnet 设备
+   ├── 记录 active_invoke_id 到哈希表
+   └── 立即返回 PROTO_NO_DATA（不等待！）
+    ↓
+5️⃣ 工作线程异步处理（后台）
+   ├── 接收 BACnet 数据包
    ├── 调用协议栈处理器
    ├── 触发回调函数
    │   handle_read_property_ack()
    │   ├── 解码响应数据
    │   ├── store_application_value()
-   │   ├── 推入读队列
-   │   └── 推送完成事件
-   └── 主线程轮询事件
+   │   └── 更新哈希表缓存 + 时间戳
     ↓
-5️⃣ 返回结果
-   └── 用户获取数据
+6️⃣ 用户重试读取（稍后）
+   └── plc_proto_read() → 缓存命中 → PROTO_SUCCESS ✅
 ```
 
 ### 📝 写入操作流程
@@ -1397,26 +1402,27 @@ impl/bacnet/
 ┌─────────────────────────────────────────────────────────────┐
 │                    🎯 用户线程 (主线程)                       │
 │  ┌─────────────────────────────────────────────────────┐    │
-│  │ 1. plc_proto_read/write() ← 提交异步请求            │    │
-│  │ 2. bacnet_poll_event() ← 轮询事件结果               │    │
-│  │ 3. 处理返回数据                                      │    │
+│  │ 1. plc_proto_read/write() ← 异步非阻塞调用          │    │
+│  │    ├── 首次调用自动初始化所有数据链路层            │    │
+│  │    ├── 查询哈希表缓存 (object_states)              │    │
+│  │    ├── 缓存命中 → 立即返回 PROTO_SUCCESS          │    │
+│  │    └── 缓存未命中 → 发送请求，返回 PROTO_NO_DATA  │    │
 │  └─────────────────────────────────────────────────────┘    │
 │          │                                                   │
-│          │ 事件通知 (条件变量)                               │
+│          │ 异步请求 (立即返回，不等待)                       │
 │          ↓                                                   │
 └─────────┼───────────────────────────────────────────────────┘
            │
 ┌──────────┼───────────────────────────────────────────────────┐
-│          │         🧵 工作线程 (异步处理)                     │
+│          │         🧵 工作线程 (后台处理)                     │
 │  ┌───────┴─────────────┐                                     │
 │  │  worker_loop_function()                                  │
 │  │  ┌─────────────────────────────────────────────────┐     │
 │  │  │ 循环执行:                                        │     │
-│  │  │ 1. 处理写队列请求                              │     │
+│  │  │ 1. 接收并处理数据包 ← 关键！                   │     │
 │  │  │ 2. 更新定时器                                   │     │
 │  │  │ 3. 检查操作超时                                 │     │
-│  │  │ 4. 接收并处理数据包 ← 关键！                   │     │
-│  │  │ 5. 自动重连检查                                 │     │
+│  │  │ 4. 多数据链路层轮询 (BIP/MSTP)                 │     │
 │  │  └─────────────────────────────────────────────────┘     │
 │  └───────┬─────────────┘                                     │
 │          │                                                   │
@@ -1434,11 +1440,11 @@ impl/bacnet/
 │  │ • handle_error_response()                                │
 │  │  └─────────────────────────────────────────────────┘     │
 │          │                                                   │
-│          │ 事件推送                                          │
+│          │ 更新哈希表缓存 (object_states)                    │
 │          ↓                                                   │
 └──────────┼───────────────────────────────────────────────────┘
            │
-           └── 推送到事件队列，通知用户线程
+           └── 用户重试读取时从缓存获取 (PROTO_SUCCESS)
 ```
 
 ---
@@ -1485,14 +1491,20 @@ tail -f bacnet.log
 int plc_proto_read(void *req);
 ```
 
-**功能**：提交异步读取请求，立即返回
+**功能**：异步提交读取请求，立即返回
 
 **参数**：
 - `req` - `bacnet_read_t*` 读取请求结构体
 
 **返回值**：
-- `PROTO_SUCCESS` (0) - 请求提交成功
+- `PROTO_SUCCESS` (0) - 缓存命中，数据已返回
+- `PROTO_NO_DATA` (-7) - 请求已发送，等待响应（可重试读取）
 - 其他值 - 错误码
+
+**缓存机制**：
+- 首次调用：返回 `PROTO_NO_DATA`，后台发送请求
+- 再次调用：返回 `PROTO_SUCCESS`，从哈希表缓存读取
+- 缓存过期：自动重新发送请求
 
 **读取请求结构体**：
 ```c
@@ -1533,7 +1545,7 @@ plc_proto_read(&req);
 int plc_proto_write(void *req);
 ```
 
-**功能**：提交异步写入请求，立即返回
+**功能**：异步提交写入请求，立即返回
 
 **参数**：
 - `req` - `bacnet_write_t*` 写入请求结构体
@@ -1581,29 +1593,6 @@ plc_proto_write(&req);
 ```
 
 ### 🎪 高级接口
-
-#### `bacnet_poll_event()` - 事件轮询 📨
-
-```c
-int bacnet_poll_event(bacnet_event_t *event, uint32_t timeout_ms);
-```
-
-**功能**：轮询等待异步操作结果
-
-**参数**：
-- `event` - 事件结构体指针
-- `timeout_ms` - 等待超时时间 (0=非阻塞)
-
-**事件类型**：
-```c
-typedef enum {
-    BACNET_EVENT_NONE = 0,           // 无事件
-    BACNET_EVENT_READ_COMPLETE,      // 读取完成
-    BACNET_EVENT_WRITE_COMPLETE,     // 写入完成
-    BACNET_EVENT_DEVICE_DISCOVERED,  // 设备发现
-    BACNET_EVENT_ERROR               // 错误事件
-} bacnet_event_type_t;
-```
 
 #### `bacnet_reload_config()` - 热配置重载 🔥
 
@@ -2808,6 +2797,7 @@ target_link_libraries(${CMAKE_PROJECT_NAME}
 ```c
 #include "impl/bacnet/src/proto_bacnet.h"
 #include <stdio.h>
+#include <unistd.h>
 
 int main() {
     // 1️⃣ 准备读取请求
@@ -2826,31 +2816,26 @@ int main() {
     bacnet_data_value_t read_value;
     read_req.value = &read_value;
     
-    // 3️⃣ 提交异步读取请求
+    // 3️⃣ 首次调用（可能返回 PROTO_NO_DATA）
     int result = plc_proto_read(&read_req);
-    if (result != PROTO_SUCCESS) {
-        printf("❌ 提交读取请求失败: %d\n", result);
-        return -1;
+    
+    if (result == PROTO_NO_DATA) {
+        printf("📡 请求已发送，等待设备响应...\n");
+        sleep(3);  // 等待设备响应
+        
+        // 4️⃣ 重试读取（从缓存获取）
+        result = plc_proto_read(&read_req);
     }
     
-    printf("📡 读取请求已发送，等待响应...\n");
-    
-    // 4️⃣ 轮询等待结果
-    bacnet_event_t event;
-    result = bacnet_poll_event(&event, 6000);  // 等待6秒
-    
-    if (result == PROTO_SUCCESS && 
-        event.type == BACNET_EVENT_READ_COMPLETE &&
-        event.status == PROTO_SUCCESS) {
-        
-        // 5️⃣ 处理读取结果
+    // 5️⃣ 处理结果
+    if (result == PROTO_SUCCESS) {
         if (read_value.type == BACNET_DATA_REAL) {
             printf("✅ 读取成功: 浮点值 = %.2f\n", read_value.value.real_value);
         } else {
             printf("✅ 读取成功: 类型=%d\n", read_value.type);
         }
     } else {
-        printf("❌ 读取失败: 事件类型=%d, 状态=%d\n", event.type, event.status);
+        printf("❌ 读取失败: 错误码=%d\n", result);
     }
     
     return 0;
@@ -2875,21 +2860,12 @@ void write_example() {
         }
     };
     
+    // 异步调用 - 请求已提交
     int result = plc_proto_write(&write_req);
-    if (result != PROTO_SUCCESS) {
-        printf("❌ 写入请求失败\n");
-        return;
-    }
-    
-    // 等待写入完成
-    bacnet_event_t event;
-    if (bacnet_poll_event(&event, 6000) == PROTO_SUCCESS &&
-        event.type == BACNET_EVENT_WRITE_COMPLETE) {
-        if (event.status == PROTO_SUCCESS) {
-            printf("✅ 写入成功\n");
-        } else {
-            printf("❌ 写入失败\n");
-        }
+    if (result == PROTO_SUCCESS) {
+        printf("✅ 写入请求已提交\n");
+    } else {
+        printf("❌ 写入请求失败: 错误码=%d\n", result);
     }
 }
 ```
@@ -2902,7 +2878,7 @@ void batch_read_example() {
     bacnet_read_t requests[NUM_POINTS];
     bacnet_data_value_t values[NUM_POINTS];
     
-    // 1️⃣ 批量提交请求
+    // 第一轮：快速提交所有请求（异步非阻塞）
     for (int i = 0; i < NUM_POINTS; i++) {
         requests[i] = {
             .device_instance = 5678,
@@ -2915,29 +2891,21 @@ void batch_read_example() {
             .check_only = false
         };
         
-        plc_proto_read(&requests[i]);
-        printf("📡 已提交读取请求 %d\n", i);
+        plc_proto_read(&requests[i]);  // 立即返回，不阻塞
+        printf("📡 已发送 AI%d 读取请求\n", i);
     }
     
-    // 2️⃣ 收集所有结果
-    int completed = 0;
-    while (completed < NUM_POINTS) {
-        bacnet_event_t event;
-        if (bacnet_poll_event(&event, 1000) == PROTO_SUCCESS) {
-            if (event.type == BACNET_EVENT_READ_COMPLETE) {
-                // 找到对应的请求
-                for (int i = 0; i < NUM_POINTS; i++) {
-                    if (event.request == &requests[i]) {
-                        if (event.status == PROTO_SUCCESS) {
-                            printf("✅ AI%d = %.2f\n", i, values[i].value.real_value);
-                        } else {
-                            printf("❌ AI%d 读取失败\n", i);
-                        }
-                        completed++;
-                        break;
-                    }
-                }
-            }
+    // 等待设备响应
+    printf("⏳ 等待设备响应...\n");
+    sleep(3);
+    
+    // 第二轮：从缓存读取结果
+    for (int i = 0; i < NUM_POINTS; i++) {
+        int result = plc_proto_read(&requests[i]);
+        if (result == PROTO_SUCCESS) {
+            printf("✅ AI%d = %.2f\n", i, values[i].value.real_value);
+        } else {
+            printf("❌ AI%d 读取失败: %d\n", i, result);
         }
     }
 }
@@ -2981,16 +2949,17 @@ void check_queue_example() {
 
 1. **🎯 主线程 (用户线程)**
    - 调用 `plc_proto_read/write()`
-   - 轮询 `bacnet_poll_event()`
-   - 处理返回结果
-   - **特点**：同步阻塞式接口
+   - 检查哈希表缓存
+   - 立即返回（异步非阻塞）
+   - **特点**：异步非阻塞接口
 
 2. **🧵 工作线程 (Worker Thread)**
    - 循环接收 BACnet 数据包
    - 调用协议栈处理器
    - 检查操作超时
    - 更新 TSM 定时器
-   - **特点**：异步运行，10ms轮询间隔
+   - 更新哈希表缓存
+   - **特点**：后台运行，10ms轮询间隔
 
 3. **🔥 热配置线程 (可选)**
    - 监控配置文件变化
@@ -3003,14 +2972,18 @@ void check_queue_example() {
 用户线程                    工作线程
     │                           │
     ├─ plc_proto_read()         │
-    │  └─ 提交请求到协议栈      │
-    │                           ├─ 发送 ReadProperty
-    │                           │
-    ├─ bacnet_poll_event()      │
-    │  └─ 等待事件 (阻塞)       │
+    │  ├─ 首次调用自动初始化    │
+    │  ├─ 检查哈希表缓存        │
+    │  ├─ 缓存命中 → 立即返回   │
+    │  └─ 缓存未命中 → 发送请求│
+    │     返回 PROTO_NO_DATA    │
     │                           ├─ 接收数据包
     │                           ├─ 处理回调
-    │                           ├─ 推送事件 ──→ 通知用户线程
+    │                           └─ 更新哈希表缓存
+    │                           │
+    ├─ plc_proto_read() (重试)  │
+    │  └─ 从缓存读取 ─────────→ │
+    │     返回 PROTO_SUCCESS    │
     │                           │
     └─ 处理结果                 │
 ```
@@ -3047,26 +3020,33 @@ if (elapsed >= 100) {  // 每100ms更新一次
 
 2. **🔒 互斥锁 (保护共享数据)**
    ```cpp
-   std::mutex operation_mutex;    // 保护活动操作
-   std::mutex event_mutex;        // 保护事件队列
-   std::mutex read_queue_mutex;   // 保护读队列
+   std::mutex object_states_mutex;    // 保护哈希表缓存
+   std::mutex operation_mutex;        // 保护活动操作
+   std::mutex hot_config_mutex;       // 保护热配置状态
    ```
 
-3. **📢 条件变量 (事件通知)**
+3. **📊 哈希表缓存 (异步结果存储)**
    ```cpp
-   std::condition_variable event_cv;
+   // 使用四元组作为键缓存读取结果
+   std::unordered_map<ObjectKey, ObjectState> object_states;
    
-   // 生产者 (工作线程)
+   // 工作线程接收响应后更新缓存
    {
-       std::lock_guard<std::mutex> lock(event_mutex);
-       events.push(event);
-       event_cv.notify_all();
+       std::lock_guard<std::mutex> lock(object_states_mutex);
+       auto& state = object_states[key];
+       state.cached_value = decoded_value;
+       state.has_valid_cache = true;
+       state.timestamp = std::chrono::steady_clock::now();
    }
    
-   // 消费者 (用户线程)
+   // 主线程查询缓存
    {
-       std::unique_lock<std::mutex> lock(event_mutex);
-       event_cv.wait_for(lock, timeout, []{ return !events.empty(); });
+       std::lock_guard<std::mutex> lock(object_states_mutex);
+       auto it = object_states.find(key);
+       if (it != object_states.end() && it->second.has_valid_cache) {
+           *req->value = it->second.cached_value;
+           return PROTO_SUCCESS;
+       }
    }
    ```
 
@@ -3103,79 +3083,61 @@ std::unique_ptr<std::thread> worker_thread;
 | 🧵 CPU占用 | 1-2% | 空闲时的线程占用 |
 | 📨 并发操作 | 理论无限制 | 受TSM和网络限制 |
 | ⏱️ 工作线程轮询 | 10ms | 可配置调整 |
-| 📊 事件队列 | 动态增长 | std::queue实现 |
 
 ### 📈 性能优化建议
 
-1. **🔄 批量操作** - 一次提交多个请求
-2. **⚡ 非阻塞轮询** - `bacnet_poll_event(event, 0)`
-3. **⏰ 合理超时** - 避免过长的超时时间
-4. **📨 及时处理** - 快速消费事件队列
-5. **🔍 队列检查** - 使用 `check_only` 模式避免重复请求
+1. **🔄 合理并发** - 使用多线程并发调用（确保线程安全）
+2. **⏰ 合理超时** - 避免过长的超时时间
+3. **🔍 队列检查** - 使用 `check_only` 模式避免重复请求
+4. **💾 智能缓存** - 启用设备地址缓存减少发现开销
 
 ---
 
 ## ❓ 常见问题
 
-### Q1: 如何判断异步操作是否完成？
+### Q1: 如何处理 PROTO_NO_DATA？
 
 ```c
-// 方式1: 阻塞等待 (推荐用于简单场景)
-bacnet_event_t event;
-int ret = bacnet_poll_event(&event, 5000);  // 等待5秒
-if (ret == PROTO_SUCCESS && event.type == BACNET_EVENT_READ_COMPLETE) {
-    // 处理结果
-}
+// 首次调用可能返回 PROTO_NO_DATA（请求已发送，等待响应）
+bacnet_read_t req = { /* ... */ };
+bacnet_data_value_t value;
+req.value = &value;
 
-// 方式2: 非阻塞轮询 (推荐用于复杂场景)
-while (running) {
-    bacnet_event_t event;
-    if (bacnet_poll_event(&event, 0) == PROTO_SUCCESS) {  // 非阻塞
-        if (event.type != BACNET_EVENT_NONE) {
-            // 处理事件
-        }
-    }
-    // 执行其他任务
-}
-```
-
-### Q2: 如何处理操作超时？
-
-```c
-// 设置合理的超时时间
-bacnet_read_t req = {
-    .timeout_ms = 3000,  // 3秒超时
-    // ... 其他参数
-};
-
-// 轮询时也设置超时
-bacnet_event_t event;
-int ret = bacnet_poll_event(&event, 3500);  // 稍微长一点
-```
-
-### Q3: 可以同时提交多个请求吗？
-
-```c
-// 可以！异步设计支持并发操作
-plc_proto_read(&req1);
-plc_proto_read(&req2);
-plc_proto_read(&req3);
-
-// 然后分别处理结果
-while (completed < 3) {
-    bacnet_event_t event;
-    bacnet_poll_event(&event, 1000);
-    if (event.type == BACNET_EVENT_READ_COMPLETE) {
-        // 通过 event.request 判断是哪个请求
-        if (event.request == &req1) {
-            // 处理 req1 的结果
-        }
-        completed++;
+int result = plc_proto_read(&req);
+if (result == PROTO_NO_DATA) {
+    printf("📡 请求已发送，等待设备响应...\n");
+    sleep(3);  // 等待设备响应
+    
+    // 重试读取，从缓存获取
+    result = plc_proto_read(&req);
+    if (result == PROTO_SUCCESS) {
+        printf("✅ 从缓存读取成功\n");
     }
 }
 ```
 
-### Q4: 错误码含义是什么？
+### Q2: 可以同时提交多个请求吗？
+
+```c
+// 可以！驱动内部使用 TSM (传输状态机) 管理多个并发操作
+// 异步调用会立即返回，多个请求可以并发发送
+bacnet_read_t req1 = { /* ... */ };
+bacnet_read_t req2 = { /* ... */ };
+bacnet_read_t req3 = { /* ... */ };
+
+// 快速提交多个请求（异步非阻塞）
+int result1 = plc_proto_read(&req1);  // 立即返回 PROTO_NO_DATA
+int result2 = plc_proto_read(&req2);  // 立即返回 PROTO_NO_DATA
+int result3 = plc_proto_read(&req3);  // 立即返回 PROTO_NO_DATA
+
+// 等待设备响应后，从缓存读取结果
+sleep(3);
+result1 = plc_proto_read(&req1);  // 返回 PROTO_SUCCESS
+result2 = plc_proto_read(&req2);  // 返回 PROTO_SUCCESS
+result3 = plc_proto_read(&req3);  // 返回 PROTO_SUCCESS
+```
+
+### Q3: 错误码含义是什么？
 
 ```c
 PROTO_SUCCESS          =  0   // ✅ 成功
@@ -3187,7 +3149,7 @@ PROTO_ERROR_WRITE      = -5   // ❌ 写入失败
 PROTO_ERROR_UNSUPPORTED = -6   // ❌ 不支持的操作
 ```
 
-### Q5: 如何调试 BACnet 通信？
+### Q4: 如何调试 BACnet 通信？
 
 ```bash
 # 1. 启用详细日志
@@ -3206,7 +3168,7 @@ tail -f bacnet.log | grep -E "(ReadProperty|WriteProperty|Ack)"
 # 确保目标设备响应 Who-Is 请求
 ```
 
-### Q6: 配置文件修改后如何生效？
+### Q5: 配置文件修改后如何生效？
 
 ```bash
 # 方式1: 重启程序
@@ -3217,7 +3179,7 @@ kill -SIGUSR1 $(pidof your_program)
 bacnet_reload_config();
 ```
 
-### Q7: 如何处理网络故障？
+### Q6: 如何处理网络故障？
 
 ```yaml
 # 启用自动重连 (计划功能)
@@ -3228,22 +3190,22 @@ bacnet:
     reconnect_interval_ms: 5000
 ```
 
-### Q8: 内存使用量大吗？
+### Q7: 内存使用量大吗？
 
 ```
 📊 内存分析：
-- BacnetContext: ~1.2MB (包含队列和缓冲区)
+- BacnetContext: ~1.2MB (包含缓冲区和状态)
 - BACnet协议栈: ~800KB
 - 线程栈: ~256KB × 2
 - 总计: ~2.1MB
 
 优化建议：
-- 减小队列大小 (kReadQueueSize, kWriteQueueSize)
-- 减少缓冲区大小
+- 减小缓冲区大小
 - 使用内存池管理动态分配
+- 限制并发操作数量
 ```
 
-### Q9: 如何扩展新功能？
+### Q8: 如何扩展新功能？
 
 遵循模块化原则：
 
@@ -3443,16 +3405,26 @@ struct CallbackSet {
 };
 ```
 
-### 7. **std::queue 事件队列**
+### 7. **内部状态哈希表 + 缓存机制**
 ```cpp
-// 线程安全的事件队列
-std::queue<bacnet_event_t> events;
+// 使用 std::unordered_map 实现对象状态缓存
+struct ObjectKey {
+    uint32_t device_instance;
+    uint16_t object_type;
+    uint32_t object_instance;
+    uint32_t property_id;
+};
 
-void push_event(BacnetContext *context, const bacnet_event_t &evt) {
-    std::lock_guard<std::mutex> lock(context->event_mutex);
-    context->events.push(evt);
-    context->event_cv.notify_all();
-}
+struct ObjectState {
+    uint8_t active_invoke_id;           // 当前请求的 invoke_id
+    bacnet_data_value_t cached_value;   // 缓存的数据
+    bool has_valid_cache;               // 缓存是否有效
+    std::chrono::steady_clock::time_point timestamp;  // 缓存时间戳
+    proto_status_t status;              // 请求状态
+    void* original_request;             // 原始请求指针
+};
+
+std::unordered_map<ObjectKey, ObjectState> object_states;
 ```
 
 ---
@@ -3567,9 +3539,7 @@ impl/bacnet/
 ├── src/
 │   ├── proto_bacnet.h
 │   ├── proto_bacnet_internal.hpp
-│   ├── proto_bacnet_core.cpp          # 当前版本
-│   ├── proto_bacnet_core_new.cpp      # 新版本
-│   ├── proto_bacnet_core_old.cpp      # 旧版本备份
+│   ├── proto_bacnet_core.cpp 
 │   ├── proto_bacnet_callbacks.cpp
 │   ├── proto_bacnet_discovery.cpp
 │   ├── proto_bacnet_io.cpp
@@ -3579,8 +3549,7 @@ impl/bacnet/
 ├── CMakeLists.txt
 ├── config.yaml
 ├── switch_version.sh
-├── REFACTOR_SUMMARY.md
-├── README_REFACTOR.md                 # 本文件
+├── README.md
 └── VERSION
 ```
 

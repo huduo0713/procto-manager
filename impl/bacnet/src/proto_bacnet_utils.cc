@@ -624,6 +624,24 @@ proto_status_t store_application_value(bacnet_read_t *req, const BACNET_APPLICAT
             out_value->value.enum_value = value.type.Enumerated;
             break;
             
+        case BACNET_APPLICATION_TAG_BIT_STRING: {
+            // BACnet Bit String 转换为 uint32_t（用于 Status_Flags 等位标志）
+            out_value->type = BACNET_DATA_UNSIGNED;
+            // 提取前 4 位（Status_Flags 只用低 4 位）
+            if (value.type.Bit_String.bits_used <= 32) {
+                uint32_t flags = 0;
+                for (uint8_t i = 0; i < value.type.Bit_String.bits_used && i < 8; ++i) {
+                    if (bitstring_bit(&value.type.Bit_String, i)) {
+                        flags |= (1 << i);
+                    }
+                }
+                out_value->value.unsigned_value = flags;
+            } else {
+                out_value->value.unsigned_value = 0;
+            }
+            break;
+        }
+            
         case BACNET_APPLICATION_TAG_OCTET_STRING: {
             out_value->type = BACNET_DATA_OCTET_STRING;
             // 分配内存并复制数据，避免const转换问题

@@ -314,6 +314,100 @@ int plc_proto_read(void *req);
 int plc_proto_write(void *req);
 
 /* -------------------------------------------------------------------------- */
+/* 批量读取接口（对象属性集合）                                                */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * @brief 对象属性集合（扁平化设计）
+ * 
+ * 包含一个 BACnet 对象的常用属性，用于批量读取场景。
+ * 无效属性用特殊值表示：字符串为 NULL，数值为 -1，布尔为 0xFF。
+ * 
+ * 使用方式：
+ * @code
+ * bacnet_object_properties_t props;
+ * int ret = plc_proto_read_object_properties(
+ *     123456,                // device_instance
+ *     OBJECT_ANALOG_INPUT,   // object_type
+ *     0,                     // object_instance
+ *     &props
+ * );
+ * 
+ * if (ret == PROTO_SUCCESS) {
+ *     if (props.object_name != NULL) {
+ *         printf("Object Name: %s\n", props.object_name);
+ *     }
+ *     if (props.present_value != -1.0) {
+ *         printf("Present Value: %f\n", props.present_value);
+ *     }
+ *     // 使用完后需要释放字符串内存
+ *     plc_proto_free_object_properties(&props);
+ * }
+ * @endcode
+ */
+typedef struct {
+    // 对象标识
+    uint32_t object_identifier;     ///< Object_Identifier (PROP_OBJECT_IDENTIFIER = 75)
+    uint16_t object_type;           ///< Object_Type (从参数直接填充，不需要读取)
+    char* object_name;              ///< Object_Name (PROP_OBJECT_NAME = 77)，NULL = 无效
+    
+    // 状态信息
+    double present_value;           ///< Present_Value (PROP_PRESENT_VALUE = 85)，-1.0 = 无效
+    uint32_t status_flags;          ///< Status_Flags (PROP_STATUS_FLAGS = 111)，0xFFFFFFFF = 无效
+    uint8_t out_of_service;         ///< Out_Of_Service (PROP_OUT_OF_SERVICE = 81)，0xFF = 无效
+    uint32_t event_state;           ///< Event_State (PROP_EVENT_STATE = 36)，0xFFFFFFFF = 无效
+    
+    // 元数据
+    char* description;              ///< Description (PROP_DESCRIPTION = 28)，NULL = 无效
+    int32_t units;                  ///< Units (PROP_UNITS = 117)，-1 = 无效或不适用
+    
+    // 控制参数
+    double relinquish_default;      ///< Relinquish_Default (PROP_RELINQUISH_DEFAULT = 104)，-1.0 = 无效
+    float cov_increment;            ///< COV_Increment (PROP_COV_INCREMENT = 22)，-1.0f = 无效
+} bacnet_object_properties_t;
+
+/**
+ * @brief 批量读取对象的多个属性（同步接口）
+ * 
+ * 一次性读取一个 BACnet 对象的 10 个常用属性。
+ * 内部循环调用 plc_proto_read()，等待每个属性返回后再读取下一个。
+ * 
+ * @param device_instance  目标设备实例号
+ * @param object_type      对象类型（如 OBJECT_ANALOG_INPUT）
+ * @param object_instance  对象实例号
+ * @param properties       [out] 输出参数，填充读取到的属性值
+ * 
+ * @return PROTO_SUCCESS (0): 至少读取到部分属性
+ *         PROTO_ERROR_*: 完全失败或参数错误
+ * 
+ * @note 无效属性标识：
+ *       - 字符串 (object_name, description): NULL 表示无效
+ *       - 数值 (present_value, relinquish_default): -1.0 表示无效
+ *       - 整数 (units): -1 表示无效
+ *       - 浮点 (cov_increment): -1.0f 表示无效
+ *       - 状态 (status_flags, event_state): 0xFFFFFFFF 表示无效
+ *       - 布尔 (out_of_service): 0xFF 表示无效
+ * 
+ * @note object_type 字段会自动填充为参数值（无需读取）
+ * 
+ * @warning 调用前确保已初始化并连接 BACnet 设备
+ * @warning 使用完毕后必须调用 plc_proto_free_object_properties() 释放字符串内存
+ */
+int plc_proto_read_object_properties(
+    uint32_t device_instance,
+    uint16_t object_type,
+    uint32_t object_instance,
+    bacnet_object_properties_t *properties
+);
+
+/**
+ * @brief 释放 bacnet_object_properties_t 中动态分配的字符串内存
+ * 
+ * @param properties 需要释放的属性结构体指针
+ */
+void plc_proto_free_object_properties(bacnet_object_properties_t *properties);
+
+/* -------------------------------------------------------------------------- */
 /* 工具函数                                                                   */
 /* -------------------------------------------------------------------------- */
 

@@ -110,7 +110,7 @@ void handle_read_property_ack(uint8_t *service_request, uint16_t service_len,
             // 存储数据到缓存
             bacnet_read_t temp_req = {};
             temp_req.value = &state.cached_value;
-            proto_status_t status = store_application_value(&temp_req, value);
+            proto_status_t status = store_application_value(&temp_req, value); // 🔑 在这里填充 type!
             
             if (status == PROTO_SUCCESS) {
                 state.has_valid_cache = true;
@@ -244,7 +244,17 @@ void handle_error_response(BACNET_ADDRESS *src, uint8_t invoke_id,
         auto it = context.object_states.find(key);
         if (it != context.object_states.end()) {
             auto &state = it->second;
-            state.status = PROTO_ERROR_READ;
+            
+            // 区分不同类型的错误
+            if (error_code == ERROR_CODE_UNKNOWN_PROPERTY || 
+                error_code == ERROR_CODE_UNKNOWN_OBJECT ||
+                error_code == ERROR_CODE_UNSUPPORTED_OBJECT_TYPE) {
+                // 属性/对象不存在或不支持
+                state.status = PROTO_ERROR_UNSUPPORTED;
+            } else {
+                // 其他读取错误
+                state.status = PROTO_ERROR_READ;
+            }
             state.active_invoke_id = 0;  // 清除活跃请求
             
             log_error("[BACnet] ReadProperty failed (device: {}, {}-{}, {}, error: {}, invoke_id: {})", 
